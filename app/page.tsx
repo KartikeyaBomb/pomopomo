@@ -2,21 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
+import { useSyncedState } from '../hooks/use-synced-state';
+import { InstallApp } from '../components/install-app';
 import { BREAK_SECONDS, FOCUS_SECONDS, colors, pickTask, remaining, settleTimer, type Task, type Timer } from '../lib/pomodoro';
 
-const KEY = 'pomopomo-v1';
 const freshTimer: Timer = { taskId: null, mode: 'focus', remaining: FOCUS_SECONDS, deadline: null };
-type State = { tasks: Task[]; timer: Timer };
 const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle * Math.PI / 180), 180 - radius * Math.cos(angle * Math.PI / 180)];
 
 export default function Home() {
-  const [state, setState] = useState<State>({ tasks: [], timer: freshTimer });
-  const [ready, setReady] = useState(false);
+  const { state, setState, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
   const [now, setNow] = useState(0);
   const [name, setName] = useState('');
   const [estimate, setEstimate] = useState('1');
   const [notice, setNotice] = useState('');
-  const [storageError, setStorageError] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
@@ -33,27 +31,9 @@ export default function Home() {
   const time = `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        const validTasks = Array.isArray(saved.tasks) && saved.tasks.every((t: Task) => typeof t.id === 'string' && typeof t.name === 'string' && Number.isInteger(t.estimate) && t.estimate > 0 && t.estimate <= 999 && Number.isInteger(t.done) && t.done >= 0 && t.done <= t.estimate && colors.includes(t.color));
-        const t = saved.timer;
-        if (validTasks && t && ['focus', 'break'].includes(t.mode) && Number.isFinite(t.remaining) && t.remaining >= 0 && t.remaining <= (t.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS) && (t.deadline === null || Number.isFinite(t.deadline)) && (t.taskId === null || saved.tasks.some((task: Task) => task.id === t.taskId))) {
-          const settled = settleTimer(saved.tasks, t, Date.now());
-          setState({ tasks: settled.tasks, timer: settled.timer });
-          if (settled.finished) setNotice(t.mode === 'focus' ? 'Pomodoro complete. Nice work! Take a little break.' : 'Break complete. Ready for a fresh start?');
-        }
-      }
-    } catch { setStorageError(true); }
-    setNow(Date.now()); setReady(true);
+    setNow(Date.now());
     return () => { if (spinTimeout.current) clearTimeout(spinTimeout.current); };
   }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { setStorageError(true); }
-  }, [state, ready]);
 
   useEffect(() => {
     if (!running) return;
@@ -64,10 +44,15 @@ export default function Home() {
         setNotice(timer.mode === 'focus' ? 'Pomodoro complete. Nice work! Take a little break.' : 'Break complete. Ready for a fresh start?');
       }
     };
+    tick();
     const interval = setInterval(tick, 250);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
-  }, [running, timer.deadline, timer.mode]);
+  }, [running, timer.deadline, timer.mode, setState]);
+
+  useEffect(() => {
+    if (spinTimeout.current) { clearTimeout(spinTimeout.current); spinTimeout.current = null; setSpinning(false); }
+  }, [tasks, timer.deadline]);
 
   useEffect(() => { document.title = running ? `${time} · Pomopomo` : 'Pomopomo — a little focus goes a long way'; }, [running, time]);
 
@@ -111,10 +96,12 @@ export default function Home() {
   let cursor = 0;
 
   return <div className="app-shell">
-    <header className="topbar"><a href="/" className="brand" aria-label="Pomopomo home"><span className="brand-icon"><TimerIcon size={21} strokeWidth={1.8} /></span>pomo<span className="brand-light">pomo</span><span className="brand-dot">.</span></a><span className="header-note">A LITTLE FOCUS GOES A LONG WAY</span><button className="help-button" onClick={() => setShowHelp(!showHelp)} aria-expanded={showHelp}><CircleHelp size={17} /> How it works</button></header>
+    <header className="topbar"><a href="/" className="brand" aria-label="Pomopomo home"><span className="brand-icon"><TimerIcon size={21} strokeWidth={1.8} /></span>pomo<span className="brand-light">pomo</span><span className="brand-dot">.</span></a><span className="header-note">A LITTLE FOCUS GOES A LONG WAY</span><InstallApp /><button className="help-button" onClick={() => setShowHelp(!showHelp)} aria-expanded={showHelp}><CircleHelp size={17} /> How it works</button></header>
     <main>
-      <div className="intro"><div><div className="eyebrow"><span /> ONE THING AT A TIME</div><h1>Less deciding.<br className="mobile-br" /> More doing.</h1><p>Make a little plan. Give it a spin. Find your focus.</p></div><div className="session-stat"><span className="stat-icon"><Check size={19} /></span><div><strong>{completed} <span>pomodoros</span></strong><small>completed from your list</small></div></div></div>
+      <div className="intro"><div><div className="eyebrow"><span /> ONE THING AT A TIME</div><h1>Less deciding.<br className="mobile-br" /> More doing.</h1><p>Make a little plan. Give it a spin. Find your focus.</p></div><div className="session-stat"><span className="stat-icon"><Check size={19} /></span><div><strong>{completed} <span>{completed === 1 ? 'pomodoro' : 'pomodoros'}</span></strong><small>completed from your list</small></div></div></div>
       {showHelp && <aside className="help-panel">Add your tasks and estimate how many 25-minute sessions each needs. Spin the wheel or select a task, then start the timer. Each completed session reduces its remaining count. Bigger remaining tasks get bigger slices: 5 out of 20 pomodoros = a 25% chance. Finished tasks leave the wheel. You can take a 5-minute break between sessions.</aside>}
+      {conflict && <aside className="sync-conflict" role="alert"><div><strong>Your other device has changes, too.</strong><p>Choose which version to keep. This device has {tasks.length} tasks; the cloud has {conflict.state?.tasks.length ?? 0}. The replaced copy is backed up on this device.</p></div><button onClick={() => resolveConflict(false)}>Use cloud version</button><button onClick={() => resolveConflict(true)}>Use this device</button></aside>}
+      {status === 'signin' && <p className="notice">Sign in to sync your tasks across devices. <a href="/signin-with-chatgpt?return_to=%2F" target="_top">Sign in</a></p>}
       {storageError && <p role="alert" className="notice">Browser storage is unavailable. Keep this tab open to retain your progress.</p>}
       <div className="workspace">
         <section className="left-column">
@@ -129,7 +116,7 @@ export default function Home() {
           <section className="tasks-card" aria-labelledby="tasks-heading"><div className="tasks-title"><h2 id="tasks-heading">Your to-do list <span>{active.length}</span></h2><span>{total} pomos left</span></div>
             <form className="add-form" onSubmit={addTask}><div className="task-field"><label htmlFor="task-name">What needs doing?</label><input id="task-name" ref={nameInput} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Read a chapter" maxLength={120} required disabled={!ready || spinning} /></div><div className="estimate-field"><label htmlFor="task-estimate">Pomos</label><input id="task-estimate" type="number" min="1" max="999" step="1" value={estimate} onChange={e => setEstimate(e.target.value)} required disabled={!ready || spinning} /></div><button className="add-button" disabled={!ready || spinning} aria-label="Add task" type="submit"><Plus size={21} /></button></form>
             <div className="task-list">{tasks.length === 0 ? <div className="empty-tasks"><div className="empty-icon"><Check size={21} /></div><strong>A little plan starts here.</strong><p>Add your first task above, or <button onClick={exampleTasks} disabled={!ready}>try an example</button>.</p></div> : tasks.map(task => <div className={`task-row ${task.id === timer.taskId ? 'selected' : ''} ${remaining(task) === 0 ? 'complete' : ''}`} key={task.id}><button className="task-select" disabled={busy || remaining(task) === 0} onClick={() => select(task)} aria-label={`Focus on ${task.name}`}><span className="task-marker" style={{ background: remaining(task) ? task.color : '#e9ede5' }}>{remaining(task) === 0 && <Check size={13} />}</span><span className="task-copy"><strong>{task.name}</strong><small>{task.done} of {task.estimate} pomos done{task.id === timer.taskId && remaining(task) > 0 && <span className="selected-label"> · Selected</span>}</small></span></button><span className="task-odds">{remaining(task) === 0 ? 'Done' : `${Number((remaining(task) / total * 100).toFixed(1))}%`}</span><button className="delete-button" disabled={spinning || (task.id === timer.taskId && busy)} onClick={() => removeTask(task.id)} aria-label={`Delete ${task.name}`}><Trash2 size={15} /></button></div>)}</div>
-            <div className="list-footer"><TimerIcon size={13} /> 1 pomo = 25 minutes of focus<span>Saved on this browser</span></div>
+            <div className="list-footer"><TimerIcon size={13} /> 1 pomo = 25 minutes of focus<span className={`sync-status status-${status}`} role="status">{status === 'synced' ? 'Synced across devices' : status === 'offline' ? 'Offline · saved on this device' : status === 'conflict' ? 'Choose a version above' : status === 'signin' ? 'Sign in to sync' : 'Syncing…'}</span></div>
           </section>
         </section>
         <section className="wheel-card" aria-labelledby="wheel-heading"><div className="wheel-heading"><span className="eyebrow">LET A LITTLE CHANCE HELP</span><h2 id="wheel-heading">What’s next?</h2><p>Your tasks. A spin. One less decision.</p></div>
