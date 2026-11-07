@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 export const metadata: Metadata = {
-  title: 'Pomopomo — a little focus goes a long way',
-  description: 'Add your tasks, spin a weighted wheel, and focus for 25 minutes. Simple pomodoro sessions for steady progress.',
+  title: 'Pomopomo',
+  description: 'Pomodoro timer, tasks, and a weighted task wheel.',
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Pomopomo' },
   icons: { icon: '/favicon.svg', apple: '/icons/apple-touch-icon.png' },
