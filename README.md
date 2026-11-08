@@ -18,7 +18,9 @@ Apply the migration only once to a fresh local database. Dev mode supplies the S
 ## Use
 
 - Enter a task and an estimate of 1–999 pomodoros.
-- Spin or select a task, then start its timer.
+- Click a task to open its side panel. Edit its name, description, and total pomodoros, then save. Completed pomodoros are preserved; a running or paused focus session requires one remaining pomodoro.
+- Spin or use a task’s play button to select it, then start its timer.
+- The timer progress bar shows the current session. Each task’s completion bar includes completed sessions and progress within its selected focus session.
 - A task's chance is its remaining pomodoros divided by all remaining pomodoros. 5 versus 15 means 25% versus 75%.
 - Completed focus sessions subtract one remaining pomodoro. Finished tasks leave the wheel.
 - Pause/resume keeps elapsed time; reset discards the current session without credit.

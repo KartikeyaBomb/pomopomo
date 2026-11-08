@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { getDb } from '../../../db';
 import { userStates } from '../../../db/schema';
+import type { Task } from '../../../lib/pomodoro';
 import { updateSchema } from '../../../lib/state-schema';
 export const dynamic = 'force-dynamic';
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -25,6 +26,12 @@ export async function PUT(request: Request) {
   const parsed = updateSchema.safeParse(json);
   if (!parsed.success) return reply({ error: 'Invalid task or timer data.' }, 400);
   const { state, revision } = parsed.data;
+  // Older installed clients omit descriptions. Preserve them during their writes.
+  if (state.tasks.some(task => task.description === undefined)) {
+    const saved = await current(user.userId);
+    const descriptions = new Map<string, string | undefined>((saved.state?.tasks ?? []).map((task: Task) => [task.id, task.description]));
+    state.tasks = state.tasks.map(task => task.description === undefined && descriptions.has(task.id) ? { ...task, description: descriptions.get(task.id) } : task);
+  }
   const db = getDb();
   const values = { userId: user.userId, payload: JSON.stringify(state), revision: 1 };
   const rows = revision === 0

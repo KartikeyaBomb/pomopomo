@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { colors, FOCUS_SECONDS, BREAK_SECONDS } from './pomodoro';
 const taskSchema = z.object({
   id: z.string().min(1).max(100), name: z.string().trim().min(1).max(120),
+  description: z.string().max(5000).optional(),
   estimate: z.number().int().min(1).max(999), done: z.number().int().min(0).max(999),
   color: z.string().refine(value => colors.includes(value)),
 }).refine(task => task.done <= task.estimate);

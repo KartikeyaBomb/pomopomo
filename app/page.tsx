@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
 import { useSyncedState } from '../hooks/use-synced-state';
+import { TaskDetails } from '../components/task-details';
 import { InstallApp } from '../components/install-app';
-import { BREAK_SECONDS, FOCUS_SECONDS, colors, pickTask, remaining, settleTimer, type Task, type Timer } from '../lib/pomodoro';
+import { BREAK_SECONDS, FOCUS_SECONDS, colors, editTask, pickTask, remaining, sessionProgress, settleTimer, type Task, type TaskChanges, type Timer } from '../lib/pomodoro';
 
 const freshTimer: Timer = { taskId: null, mode: 'focus', remaining: FOCUS_SECONDS, deadline: null };
 const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle * Math.PI / 180), 180 - radius * Math.cos(angle * Math.PI / 180)];
@@ -14,6 +15,7 @@ export default function Home() {
   const [now, setNow] = useState(0);
   const [name, setName] = useState('');
   const [estimate, setEstimate] = useState('1');
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
@@ -24,10 +26,13 @@ export default function Home() {
   const active = tasks.filter(task => remaining(task) > 0);
   const total = active.reduce((sum, task) => sum + remaining(task), 0);
   const completed = tasks.reduce((sum, task) => sum + task.done, 0);
+  const openTask = tasks.find(task => task.id === openTaskId);
   const selected = tasks.find(task => task.id === timer.taskId);
   const running = timer.deadline !== null;
   const busy = spinning || running || timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS);
   const seconds = running ? Math.max(0, Math.ceil((timer.deadline! - now) / 1000)) : timer.remaining;
+  const progress = sessionProgress(timer, now);
+  const taskProgress = (task: Task) => Math.min(1, (task.done + (timer.taskId === task.id && timer.mode === 'focus' ? progress : 0)) / task.estimate);
   const time = `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   useEffect(() => {
@@ -88,10 +93,19 @@ export default function Home() {
   function addTask(event: React.FormEvent) {
     event.preventDefault(); const count = Number(estimate);
     if (!name.trim() || !Number.isInteger(count) || count < 1 || count > 999 || spinning) return;
-    setState(previous => ({ ...previous, tasks: [...previous.tasks, { id: crypto.randomUUID(), name: name.trim(), estimate: count, done: 0, color: colors[previous.tasks.length % colors.length] }] }));
+    setState(previous => ({ ...previous, tasks: [...previous.tasks, { id: crypto.randomUUID(), name: name.trim(), description: '', estimate: count, done: 0, color: colors[previous.tasks.length % colors.length] }] }));
     setName(''); setEstimate('1'); nameInput.current?.focus();
   }
   function removeTask(id: string) { setState(previous => ({ tasks: previous.tasks.filter(task => task.id !== id), timer: previous.timer.taskId === id ? freshTimer : previous.timer })); }
+  function saveTask(changes: TaskChanges): string | null {
+    if (!openTask) return 'Task no longer exists.';
+    try {
+      const updated = editTask(openTask, changes, timer);
+      setState(previous => ({ ...previous, tasks: previous.tasks.map(task => task.id === updated.id ? updated : task) }));
+      setNotice('');
+      return null;
+    } catch (error) { return error instanceof Error ? error.message : 'Unable to save task.'; }
+  }
   let cursor = 0;
 
   return <div className="app-shell">
@@ -107,13 +121,19 @@ export default function Home() {
             <div className="card-top"><h2 id="timer-heading"><TimerIcon size={17} /> Timer</h2></div>
             <div className="mode-switch"><button className={timer.mode === 'focus' ? 'active' : ''} disabled={busy} onClick={() => changeMode('focus')}>Pomodoro</button><button className={timer.mode === 'break' ? 'active' : ''} disabled={busy} onClick={() => changeMode('break')}><Coffee size={14} /> Short break</button></div>
             <div className="time" role="timer" aria-label={`${Math.floor(seconds / 60)} minutes ${seconds % 60} seconds remaining`}>{time}</div>
+            <div className="session-progress"><progress value={progress} max={1} aria-label="Current session progress" /><span>{Math.floor(progress * 100)}%</span></div>
             <p className="focus-label">{timer.mode === 'break' ? '5-minute break' : selected && remaining(selected) ? <><span className="task-dot" style={{ background: selected.color }} />{selected.name}</> : 'Select a task to start.'}</p>
             <div className="timer-actions"><button className="primary start-button" disabled={!ready || spinning || (timer.mode === 'focus' && (!selected || !remaining(selected)))} onClick={toggleTimer}>{running ? <Pause size={17} fill="currentColor" /> : <Play size={16} fill="currentColor" />}{running ? 'Pause session' : timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS) ? 'Resume session' : timer.mode === 'break' ? 'Start break' : 'Start focusing'}</button><button className="reset-button" onClick={resetTimer} disabled={spinning} aria-label="Reset current timer" title="Reset current timer"><RotateCcw size={18} /></button></div>
             {busy && !spinning && <p className="timer-footnote">Finish or reset to switch tasks.</p>}
           </section>
           <section className="tasks-card" aria-labelledby="tasks-heading"><div className="tasks-title"><h2 id="tasks-heading">Tasks <span>{active.length}</span></h2><span>{total} pomos left</span></div>
             <form className="add-form" onSubmit={addTask}><div className="task-field"><label htmlFor="task-name">Task</label><input id="task-name" ref={nameInput} value={name} onChange={e => setName(e.target.value)} placeholder="Task name" maxLength={120} required disabled={!ready || spinning} /></div><div className="estimate-field"><label htmlFor="task-estimate">Pomos</label><input id="task-estimate" type="number" min="1" max="999" step="1" value={estimate} onChange={e => setEstimate(e.target.value)} required disabled={!ready || spinning} /></div><button className="add-button" disabled={!ready || spinning} aria-label="Add task" type="submit"><Plus size={21} /></button></form>
-            <div className="task-list">{tasks.length === 0 ? <div className="empty-tasks">No tasks yet.</div> : tasks.map(task => <div className={`task-row ${task.id === timer.taskId ? 'selected' : ''} ${remaining(task) === 0 ? 'complete' : ''}`} key={task.id}><button className="task-select" disabled={busy || remaining(task) === 0} onClick={() => select(task)} aria-label={`Focus on ${task.name}`}><span className="task-marker" style={{ background: remaining(task) ? task.color : '#e9ede5' }}>{remaining(task) === 0 && <Check size={13} />}</span><span className="task-copy"><strong>{task.name}</strong><small>{task.done} of {task.estimate} pomos done{task.id === timer.taskId && remaining(task) > 0 && <span className="selected-label"> · Selected</span>}</small></span></button><span className="task-odds">{remaining(task) === 0 ? 'Done' : `${Number((remaining(task) / total * 100).toFixed(1))}%`}</span><button className="delete-button" disabled={spinning || (task.id === timer.taskId && busy)} onClick={() => removeTask(task.id)} aria-label={`Delete ${task.name}`}><Trash2 size={15} /></button></div>)}</div>
+            <div className="task-list">{tasks.length === 0 ? <div className="empty-tasks">No tasks yet.</div> : tasks.map(task => <div className={`task-row ${task.id === timer.taskId ? 'selected' : ''} ${remaining(task) === 0 ? 'complete' : ''}`} key={task.id}>
+              <button className="task-select" onClick={() => setOpenTaskId(task.id)} aria-label={`Open ${task.name}`} aria-haspopup="dialog"><span className="task-marker" style={{ background: remaining(task) ? task.color : '#e9ede5' }}>{remaining(task) === 0 && <Check size={13} />}</span><span className="task-copy"><strong>{task.name}</strong>{task.description && <span className="task-description">{task.description}</span>}<small>{task.done} of {task.estimate} pomos done{task.id === timer.taskId && remaining(task) > 0 && <span className="selected-label"> · Selected</span>}</small><progress className="task-progress" value={taskProgress(task)} max={1} aria-label={`${task.name} completion`} /></span></button>
+              <span className="task-odds">{remaining(task) === 0 ? 'Done' : `${Number((remaining(task) / total * 100).toFixed(1))}%`}</span>
+              <button className="task-focus-button" disabled={busy || remaining(task) === 0} onClick={() => select(task)} aria-label={`Focus on ${task.name}`} title="Focus on task"><Play size={15} /></button>
+              <button className="delete-button" disabled={spinning || (task.id === timer.taskId && busy)} onClick={() => removeTask(task.id)} aria-label={`Delete ${task.name}`}><Trash2 size={15} /></button>
+            </div>)}</div>
             <div className="list-footer"><TimerIcon size={13} /> 1 pomo = 25 min · {completed} completed<span className={`sync-status status-${status}`} role="status">{status === 'synced' ? 'Synced across devices' : status === 'offline' ? 'Offline · saved on this device' : status === 'conflict' ? 'Choose a version above' : status === 'signin' ? 'Sign in to sync' : 'Syncing…'}</span></div>
           </section>
         </section>
@@ -128,5 +148,6 @@ export default function Home() {
         </section>
       </div>
     </main>
+    {openTask && <TaskDetails key={openTask.id} task={openTask} timer={timer} progress={taskProgress(openTask)} busy={busy} spinning={spinning} onSave={saveTask} onFocus={() => select(openTask)} onClose={() => setOpenTaskId(null)} />}
   </div>;
 }
