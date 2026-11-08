@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickTask, settleTimer, editTask, sessionProgress, FOCUS_SECONDS, BREAK_SECONDS } from '../lib/pomodoro.ts';
+import { pickTask, completedSession, completedAfterSync, settleTimer, editTask, sessionProgress, FOCUS_SECONDS, BREAK_SECONDS } from '../lib/pomodoro.ts';
 const tasks = [{ id: 'a', name: 'Task A', estimate: 5, done: 0, color: '#e99573' }, { id: 'b', name: 'Task B', estimate: 15, done: 0, color: '#e4be66' }];
 test('5 versus 15 allocates exactly one quarter of the random interval to A', () => {
   let a = 0;
@@ -60,4 +60,21 @@ test('session progress handles running, paused, break and elapsed deadlines', ()
   assert.equal(sessionProgress({ mode: 'break', remaining: 150, deadline: null }, 1000), 0.5);
   assert.equal(sessionProgress({ mode: 'focus', remaining: 1500, deadline: 500 }, 1000), 1);
   assert.equal(sessionProgress({ mode: 'focus', remaining: 1500, deadline: 99999999 }, 0), 0);
+});
+
+test('completion alerts identify expired sessions, never paused or reset timers', () => {
+  const timer = { taskId: 'a', mode: 'focus', remaining: FOCUS_SECONDS, deadline: 1000 };
+  assert.equal(completedSession(tasks, timer, 999), null);
+  assert.deepEqual(completedSession(tasks, timer, 1000), { id: 'focus:a:1000', mode: 'focus', taskName: 'Task A' });
+  const settled = settleTimer(tasks, timer, 1000);
+  assert.equal(completedSession(settled.tasks, settled.timer, 1001), null);
+  assert.equal(completedSession(tasks, { ...timer, deadline: null, remaining: 750 }, 1001), null);
+  assert.equal(completedSession(tasks, { ...timer, mode: 'break' }, 1001).mode, 'break');
+});
+test('a completion synced from another device alerts without treating resets as completions', () => {
+  const before = { tasks, timer: { taskId: 'a', mode: 'focus', remaining: FOCUS_SECONDS, deadline: 1000 } };
+  const after = settleTimer(before.tasks, before.timer, 1000);
+  assert.equal(completedAfterSync(before, after, 1000).id, 'focus:a:1000');
+  assert.equal(completedAfterSync(before, { tasks, timer: { ...before.timer, deadline: null } }, 1001), null);
+  assert.equal(completedAfterSync(before, after, 999), null);
 });

@@ -1,17 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
+import { ArrowRight, Bell, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
 import { useSyncedState } from '../hooks/use-synced-state';
+import { useCompletionAlerts } from '../hooks/use-completion-alerts';
+import { CompletionPopup } from '../components/completion-popup';
 import { TaskDetails } from '../components/task-details';
 import { InstallApp } from '../components/install-app';
-import { BREAK_SECONDS, FOCUS_SECONDS, colors, editTask, pickTask, remaining, sessionProgress, settleTimer, taskColor, type Task, type TaskChanges, type Timer } from '../lib/pomodoro';
+import { BREAK_SECONDS, FOCUS_SECONDS, colors, completedAfterSync, completedSession, editTask, pickTask, remaining, sessionProgress, settleTimer, taskColor, type Task, type TaskChanges, type Timer, type Completion } from '../lib/pomodoro';
 
 const freshTimer: Timer = { taskId: null, mode: 'focus', remaining: FOCUS_SECONDS, deadline: null };
 const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle * Math.PI / 180), 180 - radius * Math.cos(angle * Math.PI / 180)];
 
 export default function Home() {
   const { state, setState, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
+  const alerts = useCompletionAlerts();
+  const { announce } = alerts;
   const [now, setNow] = useState(0);
   const [name, setName] = useState('');
   const [estimate, setEstimate] = useState('1');
@@ -23,6 +27,7 @@ export default function Home() {
   const spinTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const { tasks, timer } = state;
+  const lastObservedState = useRef(state);
   const active = tasks.filter(task => remaining(task) > 0);
   const total = active.reduce((sum, task) => sum + remaining(task), 0);
   const completed = tasks.reduce((sum, task) => sum + task.done, 0);
@@ -45,7 +50,13 @@ export default function Home() {
     const tick = () => {
       const current = Date.now(); setNow(current);
       if (timer.deadline! <= current) {
-        setState(previous => { const result = settleTimer(previous.tasks, previous.timer, current); return { tasks: result.tasks, timer: result.timer }; });
+        let completion: Completion | null = null;
+        setState(previous => {
+          completion = completedSession(previous.tasks, previous.timer, current);
+          const result = settleTimer(previous.tasks, previous.timer, current);
+          return { tasks: result.tasks, timer: result.timer };
+        });
+        if (completion) announce(completion);
         setNotice(timer.mode === 'focus' ? 'Pomodoro complete.' : 'Break complete.');
       }
     };
@@ -53,7 +64,13 @@ export default function Home() {
     const interval = setInterval(tick, 250);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
-  }, [running, timer.deadline, timer.mode, setState]);
+  }, [running, timer.deadline, timer.mode, setState, announce]);
+
+  useEffect(() => {
+    const completion = completedAfterSync(lastObservedState.current, state, Date.now());
+    lastObservedState.current = state;
+    if (completion) announce(completion);
+  }, [state, announce]);
 
   useEffect(() => {
     if (spinTimeout.current) { clearTimeout(spinTimeout.current); spinTimeout.current = null; setSpinning(false); }
@@ -82,13 +99,21 @@ export default function Home() {
   function toggleTimer() {
     if (spinning || (timer.mode === 'focus' && (!selected || !remaining(selected)))) return;
     const current = Date.now(); setNow(current); setNotice('');
+    if (!running) alerts.prepareSound();
+    let completion: Completion | null = null;
     setState(previous => {
       const settled = settleTimer(previous.tasks, previous.timer, current);
-      if (settled.finished) { setNotice('Session complete.'); return { tasks: settled.tasks, timer: settled.timer }; }
+      if (settled.finished) { completion = completedSession(previous.tasks, previous.timer, current); setNotice('Session complete.'); return { tasks: settled.tasks, timer: settled.timer }; }
       return { ...previous, timer: { ...previous.timer, deadline: running ? null : current + previous.timer.remaining * 1000, remaining: running ? Math.max(0, Math.ceil((previous.timer.deadline! - current) / 1000)) : previous.timer.remaining } };
     });
+    if (completion) announce(completion);
   }
   function resetTimer() { setState(previous => ({ ...previous, timer: { ...previous.timer, deadline: null, remaining: previous.timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS } })); }
+  function startBreak() {
+    if (busy) return;
+    alerts.prepareSound(); const current = Date.now(); setNow(current);
+    setState(previous => ({ ...previous, timer: { ...previous.timer, mode: 'break', remaining: BREAK_SECONDS, deadline: current + BREAK_SECONDS * 1000 } }));
+  }
   function changeMode(mode: 'focus' | 'break') { if (!busy) setState(previous => ({ ...previous, timer: { ...previous.timer, mode, remaining: mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS } })); }
   function addTask(event: React.FormEvent) {
     event.preventDefault(); const count = Number(estimate);
@@ -118,7 +143,7 @@ export default function Home() {
       <div className="workspace">
         <section className="left-column">
           <section className="timer-card" aria-labelledby="timer-heading">
-            <div className="card-top"><h2 id="timer-heading"><TimerIcon size={17} /> Timer</h2></div>
+            <div className="card-top"><h2 id="timer-heading"><TimerIcon size={17} /> Timer</h2><details className="alert-settings"><summary><Bell size={15} /> Alerts</summary><div className="alert-options"><label><input type="checkbox" checked={alerts.sound} onChange={alerts.toggleSound} /> Completion sound</label><button type="button" onClick={alerts.toggleNotifications}>{alerts.notifications ? 'Turn notifications off' : 'Enable notifications'}</button><p>{alerts.message || (alerts.permission === 'unsupported' ? 'Browser notifications unavailable. Popups still work.' : 'Keep the app open. Locked phones may delay alerts.')}</p></div></details></div>
             <div className="mode-switch"><button className={timer.mode === 'focus' ? 'active' : ''} disabled={busy} onClick={() => changeMode('focus')}>Pomodoro</button><button className={timer.mode === 'break' ? 'active' : ''} disabled={busy} onClick={() => changeMode('break')}><Coffee size={14} /> Short break</button></div>
             <div className="time" role="timer" aria-label={`${Math.floor(seconds / 60)} minutes ${seconds % 60} seconds remaining`}>{time}</div>
             <div className="session-progress"><progress value={progress} max={1} aria-label="Current session progress" /><span>{Math.floor(progress * 100)}%</span></div>
@@ -149,5 +174,6 @@ export default function Home() {
       </div>
     </main>
     {openTask && <TaskDetails key={openTask.id} task={openTask} timer={timer} progress={taskProgress(openTask)} busy={busy} spinning={spinning} onSave={saveTask} onFocus={() => select(openTask)} onClose={() => setOpenTaskId(null)} />}
+    {alerts.completion && <CompletionPopup key={alerts.completion.id} completion={alerts.completion} canStartBreak={!busy} onDismiss={alerts.dismiss} onStartBreak={startBreak} />}
   </div>;
 }

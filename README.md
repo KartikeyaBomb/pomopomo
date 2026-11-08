@@ -33,7 +33,7 @@ Cloudflare D1 stores a separate task and timer snapshot for each authenticated S
 
 A service worker caches the app shell and static assets. API and authentication responses are never cached. After the first online load, the app can open offline. Tasks and pending changes are saved locally and uploaded when the app is open online again. Sync status is displayed beneath the task list. Cloud data remains separate from local test data.
 
-Timer deadlines survive device sleep and reload. Expired focus sessions are credited once, and matching updates from multiple devices resolve automatically. The app does not provide a background alarm or push-notification service; returning to the app updates the timer. Phone OSes may suspend a background PWA, and sync resumes when reopened.
+Timer deadlines survive device sleep and reload. Expired focus sessions are credited once, and matching updates from multiple devices resolve automatically. Completion shows a persistent popup with an optional chime and a button to start a break. Timer → Alerts controls sound and opt-in browser notifications. Notifications use the service worker when available and require browser permission. Tapping a notification focuses the app. An undismissed popup is restored on reload. This is not a server-push alarm service: closed or suspended apps can only detect expiry when resumed. Phone OSes may suspend a background PWA, and sync resumes when reopened.
 
 ## Verify
 

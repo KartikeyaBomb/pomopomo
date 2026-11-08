@@ -16,6 +16,11 @@ export function pickTask(tasks: Task[], random: number) {
   }
   return tasks.filter(task => remaining(task) > 0).at(-1) ?? null;
 }
+export type Completion = { id: string; mode: 'focus' | 'break'; taskName: string | null };
+export function completedSession(tasks: Task[], timer: Timer, now: number): Completion | null {
+  if (timer.deadline === null || timer.deadline > now) return null;
+  return { id: `${timer.mode}:${timer.taskId ?? ''}:${timer.deadline}`, mode: timer.mode, taskName: tasks.find(task => task.id === timer.taskId)?.name ?? null };
+}
 export function settleTimer(tasks: Task[], timer: Timer, now: number) {
   if (timer.deadline === null || timer.deadline > now) return { tasks, timer, finished: false };
   return {
@@ -42,4 +47,15 @@ export function sessionProgress(timer: Timer, now: number): number {
   const duration = timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS;
   const seconds = timer.deadline === null ? timer.remaining : (timer.deadline - now) / 1000;
   return Math.max(0, Math.min(1, 1 - seconds / duration));
+}
+
+export function completedAfterSync(before: { tasks: Task[]; timer: Timer }, after: { tasks: Task[]; timer: Timer }, now: number): Completion | null {
+  const completion = completedSession(before.tasks, before.timer, now);
+  if (!completion) return null;
+  if (before.timer.mode === 'focus') {
+    const oldTask = before.tasks.find(task => task.id === before.timer.taskId);
+    const newTask = after.tasks.find(task => task.id === before.timer.taskId);
+    return oldTask && newTask && newTask.done > oldTask.done ? completion : null;
+  }
+  return after.timer.mode === 'break' && after.timer.deadline === null && after.timer.remaining === BREAK_SECONDS ? completion : null;
 }
