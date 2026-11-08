@@ -10,10 +10,11 @@ Requires Node 22.13 or later.
 npm ci
 npm run build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_silent_mercury.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_petite_sabretooth.sql
 npm run dev
 ```
 
-Apply the migration only once to a fresh local database. Dev mode supplies the Sites test identity. Production requires Sites authentication. Use `npm run start` for the production Worker and service worker preview; it does not mock authentication.
+Apply each migration only once to a fresh local database. Dev mode supplies the Sites test identity. Production requires Sites authentication. Use `npm run start` for the production Worker and service worker preview; it does not mock authentication.
 
 ## Use
 
@@ -38,9 +39,19 @@ Timer deadlines survive device sleep and reload. Expired focus sessions are cred
 ## Verify
 
 ```sh
-node --experimental-strip-types --test tests/pomodoro.test.mjs
+node --experimental-strip-types --test tests/*.test.mjs
 npx tsc --noEmit
 npm run build
 ```
 
 Built with React, TypeScript, Vinext, and Cloudflare D1. Sites hosting identity and database binding live in `.openai/hosting.json`. Schema migrations are under `drizzle/`; Sites applies them during deployment.
+
+## Activity history
+
+The History calendar records completed focus sessions and breaks. Select a day to see task-name snapshots, completion times, and duration; navigate months for totals of pomodoros, focus minutes, active focus days, and breaks. Dates use the device’s local timezone, which is shown below the calendar.
+
+A session is dated by its stored timer deadline, even if the app wakes later. Paused or reset sessions are not logged. Earlier task counters have no timestamps and are not backfilled with guessed dates. History records survive task renames, deletions, and task-sync conflict choices.
+
+New records enter a localStorage outbox before the timer is settled, then upload in idempotent batches to `/api/history`. The D1 `activity_sessions` table is keyed by authenticated user and deterministic session ID. Duplicate completions and retries cannot inflate totals. Cached months remain readable offline; pending sessions upload while the app is open online. Cloud history refreshes every five seconds. Old installed versions must be refreshed to begin recording activity.
+
+For local API integration checks, start the production preview on port 8787 and run `node tests/history-api.mjs`. This writes only to the local test database and checks persistence, deduplication, account isolation, retained history after deleting tasks, validation, and month boundaries.

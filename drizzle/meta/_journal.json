@@ -8,6 +8,13 @@
       "when": 1794074871148,
       "tag": "0000_silent_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794158523316,
+      "tag": "0001_petite_sabretooth",
+      "breakpoints": true
     }
   ]
 }

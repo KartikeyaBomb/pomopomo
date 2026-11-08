@@ -1,3 +1,4 @@
+import type { Activity } from './activity';
 export type Task = { id: string; name: string; description?: string; estimate: number; done: number; color: string };
 export type Timer = { taskId: string | null; mode: 'focus' | 'break'; remaining: number; deadline: number | null };
 export const FOCUS_SECONDS = 25 * 60;
@@ -58,4 +59,10 @@ export function completedAfterSync(before: { tasks: Task[]; timer: Timer }, afte
     return oldTask && newTask && newTask.done > oldTask.done ? completion : null;
   }
   return after.timer.mode === 'break' && after.timer.deadline === null && after.timer.remaining === BREAK_SECONDS ? completion : null;
+}
+
+export function activityFor(tasks: Task[], timer: Timer, now: number): Activity | null {
+  const completion = completedSession(tasks, timer, now);
+  if (!completion || timer.deadline === null) return null;
+  return { ...completion, taskId: timer.taskId, completedAt: timer.deadline, durationSeconds: timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS };
 }

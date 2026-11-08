@@ -3,17 +3,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Bell, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
 import { useSyncedState } from '../hooks/use-synced-state';
+import { useActivityHistory } from '../hooks/use-activity-history';
+import { ActivityCalendar } from '../components/activity-calendar';
 import { useCompletionAlerts } from '../hooks/use-completion-alerts';
 import { CompletionPopup } from '../components/completion-popup';
 import { TaskDetails } from '../components/task-details';
 import { InstallApp } from '../components/install-app';
-import { BREAK_SECONDS, FOCUS_SECONDS, colors, completedAfterSync, completedSession, editTask, pickTask, remaining, sessionProgress, settleTimer, taskColor, type Task, type TaskChanges, type Timer, type Completion } from '../lib/pomodoro';
+import { BREAK_SECONDS, FOCUS_SECONDS, colors, activityFor, completedAfterSync, completedSession, editTask, pickTask, remaining, sessionProgress, settleTimer, taskColor, type Task, type TaskChanges, type Timer, type Completion } from '../lib/pomodoro';
 
 const freshTimer: Timer = { taskId: null, mode: 'focus', remaining: FOCUS_SECONDS, deadline: null };
 const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle * Math.PI / 180), 180 - radius * Math.cos(angle * Math.PI / 180)];
 
 export default function Home() {
   const { state, setState, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
+  const [historyMonth, setHistoryMonth] = useState<Date | null>(null);
+  const history = useActivityHistory(historyMonth);
+  const { record } = history;
   const alerts = useCompletionAlerts();
   const { announce } = alerts;
   const [now, setNow] = useState(0);
@@ -42,6 +47,7 @@ export default function Home() {
 
   useEffect(() => {
     setNow(Date.now());
+    const date = new Date(); setHistoryMonth(new Date(date.getFullYear(), date.getMonth(), 1, 12));
     return () => { if (spinTimeout.current) clearTimeout(spinTimeout.current); };
   }, []);
 
@@ -52,6 +58,8 @@ export default function Home() {
       if (timer.deadline! <= current) {
         let completion: Completion | null = null;
         setState(previous => {
+          const entry = activityFor(previous.tasks, previous.timer, current);
+          if (entry) record(entry);
           completion = completedSession(previous.tasks, previous.timer, current);
           const result = settleTimer(previous.tasks, previous.timer, current);
           return { tasks: result.tasks, timer: result.timer };
@@ -64,13 +72,17 @@ export default function Home() {
     const interval = setInterval(tick, 250);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
-  }, [running, timer.deadline, timer.mode, setState, announce]);
+  }, [running, timer.deadline, timer.mode, setState, announce, record]);
 
   useEffect(() => {
     const completion = completedAfterSync(lastObservedState.current, state, Date.now());
+    if (completion) {
+      const entry = activityFor(lastObservedState.current.tasks, lastObservedState.current.timer, Date.now());
+      if (entry) record(entry);
+      announce(completion);
+    }
     lastObservedState.current = state;
-    if (completion) announce(completion);
-  }, [state, announce]);
+  }, [state, announce, record]);
 
   useEffect(() => {
     if (spinTimeout.current) { clearTimeout(spinTimeout.current); spinTimeout.current = null; setSpinning(false); }
@@ -103,7 +115,7 @@ export default function Home() {
     let completion: Completion | null = null;
     setState(previous => {
       const settled = settleTimer(previous.tasks, previous.timer, current);
-      if (settled.finished) { completion = completedSession(previous.tasks, previous.timer, current); setNotice('Session complete.'); return { tasks: settled.tasks, timer: settled.timer }; }
+      if (settled.finished) { const entry = activityFor(previous.tasks, previous.timer, current); if (entry) record(entry); completion = completedSession(previous.tasks, previous.timer, current); setNotice('Session complete.'); return { tasks: settled.tasks, timer: settled.timer }; }
       return { ...previous, timer: { ...previous.timer, deadline: running ? null : current + previous.timer.remaining * 1000, remaining: running ? Math.max(0, Math.ceil((previous.timer.deadline! - current) / 1000)) : previous.timer.remaining } };
     });
     if (completion) announce(completion);
@@ -172,6 +184,7 @@ export default function Home() {
           <div className="wheel-result" aria-live="polite">{notice || (total === 0 ? tasks.length ? 'All tasks complete.' : 'Add a task to spin.' : '')}</div>
         </section>
       </div>
+      <ActivityCalendar month={historyMonth} onMonthChange={setHistoryMonth} entries={history.entries} status={history.status} pendingCount={history.pendingCount} storageError={history.storageError} />
     </main>
     {openTask && <TaskDetails key={openTask.id} task={openTask} timer={timer} progress={taskProgress(openTask)} busy={busy} spinning={spinning} onSave={saveTask} onFocus={() => select(openTask)} onClose={() => setOpenTaskId(null)} />}
     {alerts.completion && <CompletionPopup key={alerts.completion.id} completion={alerts.completion} canStartBreak={!busy} onDismiss={alerts.dismiss} onStartBreak={startBreak} />}
