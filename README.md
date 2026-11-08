@@ -48,7 +48,7 @@ Built with React, TypeScript, Vinext, and Cloudflare D1. Sites hosting identity 
 
 ## Activity history
 
-The History calendar records completed focus sessions and breaks. Select a day to see task-name snapshots, completion times, and duration; navigate months for totals of pomodoros, focus minutes, active focus days, and breaks. Dates use the device’s local timezone, which is shown below the calendar.
+The compact History day view sits below the wheel and records completed focus sessions and breaks. Use previous/next day, Today, or the date picker to see task-name snapshots, completion times, and daily totals. Longer session lists scroll within the card. Dates and times use the device’s local timezone.
 
 A session is dated by its stored timer deadline, even if the app wakes later. Paused or reset sessions are not logged. Earlier task counters have no timestamps and are not backfilled with guessed dates. History records survive task renames, deletions, and task-sync conflict choices.
 

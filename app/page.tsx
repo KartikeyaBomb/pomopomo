@@ -16,8 +16,8 @@ const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle 
 
 export default function Home() {
   const { state, setState, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
-  const [historyMonth, setHistoryMonth] = useState<Date | null>(null);
-  const history = useActivityHistory(historyMonth);
+  const [historyDate, setHistoryDate] = useState<Date | null>(null);
+  const history = useActivityHistory(historyDate);
   const { record } = history;
   const alerts = useCompletionAlerts();
   const { announce } = alerts;
@@ -47,7 +47,7 @@ export default function Home() {
 
   useEffect(() => {
     setNow(Date.now());
-    const date = new Date(); setHistoryMonth(new Date(date.getFullYear(), date.getMonth(), 1, 12));
+    const date = new Date(); setHistoryDate(new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12));
     return () => { if (spinTimeout.current) clearTimeout(spinTimeout.current); };
   }, []);
 
@@ -174,6 +174,7 @@ export default function Home() {
             <div className="list-footer"><TimerIcon size={13} /> 1 pomo = 25 min · {completed} completed<span className={`sync-status status-${status}`} role="status">{status === 'synced' ? 'Synced across devices' : status === 'offline' ? 'Offline · saved on this device' : status === 'conflict' ? 'Choose a version above' : status === 'signin' ? 'Sign in to sync' : 'Syncing…'}</span></div>
           </section>
         </section>
+        <div className="right-column">
         <section className="wheel-card" aria-labelledby="wheel-heading"><div className="wheel-heading"><h2 id="wheel-heading">Task wheel</h2></div>
           <div className="wheel-wrap"><span className="wheel-pointer" /><div className="wheel-shadow"><svg className="wheel" viewBox="0 0 360 360" role="img" aria-label={total ? `Task wheel, ${active.map(t => `${t.name}: ${Number((remaining(t) / total * 100).toFixed(1))}% chance`).join(', ')}` : 'Add tasks to fill your wheel'} style={{ transform: `rotate(${rotation}deg)` }}>{total === 0 ? <><circle cx="180" cy="180" r="175" fill="#e1e6f6" /><path d="M180 5V355M5 180H355" stroke="#f9fbff" strokeWidth="3" /><path d="M56 56L304 304M56 304L304 56" stroke="#f9fbff" strokeWidth="3" /></> : active.map((task) => {
             const start = cursor; const angle = remaining(task) / total * 360; cursor += angle;
@@ -183,8 +184,9 @@ export default function Home() {
           <button className="spin-button" disabled={!ready || total === 0 || busy} onClick={spin}><Shuffle size={18} />{spinning ? 'Spinning…' : 'Spin'}<ArrowRight size={17} /></button>
           <div className="wheel-result" aria-live="polite">{notice || (total === 0 ? tasks.length ? 'All tasks complete.' : 'Add a task to spin.' : '')}</div>
         </section>
+        <ActivityCalendar date={historyDate} onDateChange={setHistoryDate} entries={history.entries} status={history.status} pendingCount={history.pendingCount} storageError={history.storageError} />
+        </div>
       </div>
-      <ActivityCalendar month={historyMonth} onMonthChange={setHistoryMonth} entries={history.entries} status={history.status} pendingCount={history.pendingCount} storageError={history.storageError} />
     </main>
     {openTask && <TaskDetails key={openTask.id} task={openTask} timer={timer} progress={taskProgress(openTask)} busy={busy} spinning={spinning} onSave={saveTask} onFocus={() => select(openTask)} onClose={() => setOpenTaskId(null)} />}
     {alerts.completion && <CompletionPopup key={alerts.completion.id} completion={alerts.completion} canStartBreak={!busy} onDismiss={alerts.dismiss} onStartBreak={startBreak} />}
