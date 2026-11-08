@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Pomopomo' },
   icons: { icon: '/favicon.svg', apple: '/icons/apple-touch-icon.png' },
 };
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#65764f' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#5366d9' };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en"><body>{children}</body></html>;
 }

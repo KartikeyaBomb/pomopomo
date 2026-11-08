@@ -1,4 +1,4 @@
-const CACHE = 'pomopomo-shell-v3';
+const CACHE = 'pomopomo-shell-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {

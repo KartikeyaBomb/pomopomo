@@ -21,22 +21,34 @@ export function TaskDetails({ task, timer, progress, busy, spinning, onSave, onF
   const [description, setDescription] = useState(task.description ?? '');
   const [estimate, setEstimate] = useState(String(task.estimate));
   const [error, setError] = useState('');
+  const [closing, setClosing] = useState(false);
+  const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const changedElsewhere = JSON.stringify(original) !== JSON.stringify(fields(task));
   const inSession = timer.mode === 'focus' && timer.taskId === task.id && (timer.deadline !== null || timer.remaining < FOCUS_SECONDS);
   const minimum = Math.max(1, task.done + (inSession ? 1 : 0));
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    dialog.current?.showModal();
+    return () => { if (closeTimeout.current) clearTimeout(closeTimeout.current); };
+  }, []);
+  function closePanel() {
+    if (closing) return;
+    const finish = () => { dialog.current?.close(); onClose(); };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+    setClosing(true);
+    closeTimeout.current = setTimeout(finish, 180);
+  }
   function reload() {
     setOriginal(fields(task)); setName(task.name); setDescription(task.description ?? ''); setEstimate(String(task.estimate)); setError('');
   }
   function save(event: React.FormEvent) {
     event.preventDefault();
-    if (changedElsewhere || spinning) return;
+    if (changedElsewhere || spinning || closing) return;
     const result = onSave({ name, description, estimate: Number(estimate) });
     if (result) setError(result);
-    else onClose();
+    else closePanel();
   }
-  return <dialog ref={dialog} className="task-panel" aria-labelledby="task-panel-title" onCancel={onClose} onClick={event => { if (event.target === event.currentTarget) { const box = event.currentTarget.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right) onClose(); } }}>
-    <div className="panel-top"><span><FileText size={15} /> Task details</span><button type="button" className="panel-close" aria-label="Close task details" onClick={onClose}><X size={20} /></button></div>
+  return <dialog ref={dialog} className={`task-panel ${closing ? 'closing' : ''}`} aria-labelledby="task-panel-title" onCancel={event => { event.preventDefault(); closePanel(); }} onClick={event => { if (event.target === event.currentTarget) { const box = event.currentTarget.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right) closePanel(); } }}>
+    <div className="panel-top"><span><FileText size={15} /> Task details</span><button type="button" className="panel-close" aria-label="Close task details" onClick={closePanel}><X size={20} /></button></div>
     <form className="panel-form" onSubmit={save}>
       <h2 id="task-panel-title" className="sr-only">Edit task</h2>
       <label className="sr-only" htmlFor="edit-task-name">Task name</label>
@@ -48,8 +60,8 @@ export function TaskDetails({ task, timer, progress, busy, spinning, onSave, onF
       {inSession && <p className="panel-hint">Total includes completed pomodoros and the current session.</p>}
       {changedElsewhere && <div className="panel-error" role="alert">This task changed on another device. <button type="button" onClick={reload}>Reload task</button></div>}
       {error && <p className="panel-error" role="alert">{error}</p>}
-      <div className="panel-actions"><button className="panel-cancel" type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={spinning || changedElsewhere}>Save changes</button></div>
-      <button className="panel-focus" type="button" onClick={() => { onFocus(); onClose(); }} disabled={busy || task.done >= task.estimate || name !== original.name || description !== original.description || estimate !== String(original.estimate)}><Play size={14} /> Focus on task</button>
+      <div className="panel-actions"><button className="panel-cancel" type="button" onClick={closePanel}>Cancel</button><button type="submit" className="primary" disabled={spinning || changedElsewhere || closing}>Save changes</button></div>
+      <button className="panel-focus" type="button" onClick={() => { onFocus(); closePanel(); }} disabled={busy || task.done >= task.estimate || name !== original.name || description !== original.description || estimate !== String(original.estimate)}><Play size={14} /> Focus on task</button>
     </form>
   </dialog>;
 }
