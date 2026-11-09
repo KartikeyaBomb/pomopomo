@@ -218,3 +218,7 @@ body:has(.task-panel[open]) { overflow: hidden; }
 .history-event-icon.break { background: #f0ebfb; color: #9b85c5; }
 .history-warning { font-size: 12px; color: #a1794b; }
 @media(max-width:650px) { .right-column { gap: 18px; } .history-card { padding: 20px 16px; } }
+.device-settings { margin: 18px 0; font-size: 12px; color: #6c7baa; }
+.device-settings summary { cursor: pointer; }
+.device-settings button { padding: 8px 12px; background: #eef1fc; border-radius: 8px; margin: 8px; color: #5366a9; }
+.device-settings li { margin: 4px 0; }

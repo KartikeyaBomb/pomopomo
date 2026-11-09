@@ -11,6 +11,7 @@ npm ci
 npm run build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_silent_mercury.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_petite_sabretooth.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_dashing_norman_osborn.sql
 npm run dev
 ```
 
@@ -34,7 +35,7 @@ Cloudflare D1 stores a separate task and timer snapshot for each authenticated S
 
 A service worker caches the app shell and static assets. API and authentication responses are never cached. After the first online load, the app can open offline. Tasks and pending changes are saved locally and uploaded when the app is open online again. Sync status is displayed beneath the task list. Cloud data remains separate from local test data.
 
-Timer deadlines survive device sleep and reload. Expired focus sessions are credited once, and matching updates from multiple devices resolve automatically. Completion shows a persistent popup with an optional chime and a button to start a break. Timer → Alerts controls sound and opt-in browser notifications. Notifications use the service worker when available and require browser permission. Tapping a notification focuses the app. An undismissed popup is restored on reload. This is not a server-push alarm service: closed or suspended apps can only detect expiry when resumed. Phone OSes may suspend a background PWA, and sync resumes when reopened.
+Timer controls require a connection; task edits retain offline saving. Timer deadlines survive device sleep and reload. Expired focus sessions are credited once, and matching updates from multiple devices resolve automatically. Completion shows a persistent popup with an optional chime and a button to start a break. Timer → Alerts controls sound and opt-in browser notifications. Notifications use the service worker when available and require browser permission. Tapping a notification focuses the app. An undismissed popup is restored on reload. This is not a server-push alarm service: closed or suspended apps can only detect expiry when resumed. Phone OSes may suspend a background PWA, and sync resumes when reopened.
 
 ## Verify
 
@@ -52,6 +53,10 @@ The compact History day view sits below the wheel and records completed focus se
 
 A session is dated by its stored timer deadline, even if the app wakes later. Paused or reset sessions are not logged. Earlier task counters have no timestamps and are not backfilled with guessed dates. History records survive task renames, deletions, and task-sync conflict choices.
 
-New records enter a localStorage outbox before the timer is settled, then upload in idempotent batches to `/api/history`. The D1 `activity_sessions` table is keyed by authenticated user and deterministic session ID. Duplicate completions and retries cannot inflate totals. Cached months remain readable offline; pending sessions upload while the app is open online. Cloud history refreshes every five seconds. Old installed versions must be refreshed to begin recording activity.
+New records are written atomically on the server with timer settlement and task progress. The legacy localStorage outbox remains available to upload older pending history. The D1 `activity_sessions` table is keyed by authenticated user and deterministic session ID. Duplicate completions and retries cannot inflate totals. Cached months remain readable offline; pending sessions upload while the app is open online. Cloud history refreshes every five seconds. Older installed versions must be refreshed to use server-authoritative timer controls.
 
 For local API integration checks, start the production preview on port 8787 and run `node tests/history-api.mjs`. This writes only to the local test database and checks persistence, deduplication, account isolation, retained history after deleting tasks, validation, and month boundaries.
+
+## E-paper device integration
+
+See [the complete hardware, pairing, and hosting guide](docs/EPAPER.md). Firmware is in `firmware/MyEpaperApp`. The device gateway runs at `https://pomopomo-device-gateway.pomopomo-karti.workers.dev`. Timer control now requires a connection and uses server-authoritative commands; task edits retain offline storage. Refresh older installed clients. Completion runs on server requests, including device polling with browsers closed.

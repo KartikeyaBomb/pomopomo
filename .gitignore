@@ -43,3 +43,6 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+/firmware/build/
+/firmware/**/secrets.h
+/gateway/.wrangler/

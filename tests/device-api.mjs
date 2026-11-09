@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:8787';
+if(!['localhost','127.0.0.1'].includes(new URL(origin).hostname))throw new Error('Local test only');
+const user='device-test-'+crypto.randomUUID(),other='other-'+crypto.randomUUID();
+async function call(path,{method='GET',body,account=user,token,headers={}}={}){
+ const r=await fetch(origin+path,{method,headers:{...(account?{'oai-authenticated-user-id':account,'oai-authenticated-user-email':'device-test@example.test'}:{}),...(token?{authorization:'Bearer '+token}:{}),'content-type':'application/json',...headers},body:body?JSON.stringify(body):undefined});
+ return {status:r.status,body:await r.json()};
+}
+assert.equal((await call('/api/devices',{account:null})).status,401);
+assert.equal((await call('/api/device/state',{account:null})).status,401);
+let r=await call('/api/state');assert.equal(r.status,200);
+const initial={tasks:[{id:'task-a',name:'Existing account task',description:'Private notes',estimate:5,done:0,color:'#e99573'}],timer:{taskId:null,mode:'focus',remaining:1500,deadline:null}};
+r=await call('/api/state',{method:'PUT',body:{state:initial,revision:r.body.revision}});assert.equal(r.status,200);
+const pair=await call('/api/devices',{method:'POST',body:{name:'Test ESP32'}});assert.equal(pair.status,200);
+const token='pomo_'+Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+const claim={pairingCode:pair.body.pairingCode,token};
+r=await call('/api/device/pair',{method:'POST',account:null,body:claim});assert.equal(r.status,200);
+assert.equal((await call('/api/device/pair',{method:'POST',account:null,body:claim})).status,200);
+assert.equal((await call('/api/device/pair',{method:'POST',account:null,body:{...claim,token:'pomo_'+'b'.repeat(64)}})).status,401);
+r=await call('/api/device/state',{account:null,token});assert.equal(r.body.state.tasks[0].name,'Existing account task');
+let cmd={commandId:crypto.randomUUID(),revision:r.body.revision,action:{type:'select',taskId:'task-a'}};
+r=await call('/api/device/command',{method:'POST',account:null,token,body:cmd});assert.equal(r.status,200);
+cmd={commandId:crypto.randomUUID(),revision:r.body.revision,action:{type:'start'}};
+r=await call('/api/device/command',{method:'POST',account:null,token,body:cmd});assert.equal(r.status,200);const deadline=r.body.state.timer.deadline;
+assert.equal((await call('/api/device/command',{method:'POST',account:null,token,body:cmd})).body.state.timer.deadline,deadline);
+const laptop=await call('/api/state');assert.equal(laptop.body.state.timer.deadline,deadline);
+const stale={commandId:crypto.randomUUID(),revision:1,action:{type:'pause'}};assert.equal((await call('/api/timer',{method:'POST',body:stale})).status,409);
+assert.equal((await call('/api/state',{account:other})).body.state.tasks.length,0);
+assert.equal((await call('/api/devices',{method:'DELETE',account:other,body:{id:pair.body.id}})).status,200);
+assert.equal((await call('/api/device/state',{account:null,token})).status,200);
+assert.equal((await call('/api/devices',{method:'DELETE',body:{id:pair.body.id}})).status,200);
+assert.equal((await call('/api/device/state',{account:null,token})).status,401);
+assert.equal((await call('/api/device/command',{method:'POST',account:null,token,body:cmd})).status,401);
+assert.equal((await call('/api/device/pair',{method:'POST',account:null,body:claim})).status,401);
+assert.equal((await call('/api/devices',{method:'POST',body:{name:'bad'},headers:{Origin:'https://evil.test'}})).status,403);
+console.log('Device API passed: pairing, claim retries, replay, account isolation, browser sync, stale revisions, revocation, origin checks.');

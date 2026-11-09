@@ -4,21 +4,23 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Bell, Check, CircleHelp, Coffee, Plus, RotateCcw, Shuffle, Trash2, Play, Pause, Timer as TimerIcon } from 'lucide-react';
 import { useSyncedState } from '../hooks/use-synced-state';
 import { useActivityHistory } from '../hooks/use-activity-history';
+import { DeviceSettings } from '../components/device-settings';
+import type { TimerAction } from '../lib/timer-actions';
 import { ActivityCalendar } from '../components/activity-calendar';
 import { useCompletionAlerts } from '../hooks/use-completion-alerts';
 import { CompletionPopup } from '../components/completion-popup';
 import { TaskDetails } from '../components/task-details';
 import { InstallApp } from '../components/install-app';
-import { BREAK_SECONDS, FOCUS_SECONDS, colors, activityFor, completedAfterSync, completedSession, editTask, pickTask, remaining, sessionProgress, settleTimer, taskColor, type Task, type TaskChanges, type Timer, type Completion } from '../lib/pomodoro';
+import { BREAK_SECONDS, FOCUS_SECONDS, colors, completedAfterSync, editTask, pickTask, remaining, sessionProgress, taskColor, type Task, type TaskChanges, type Timer } from '../lib/pomodoro';
 
 const freshTimer: Timer = { taskId: null, mode: 'focus', remaining: FOCUS_SECONDS, deadline: null };
 const point = (angle: number, radius: number) => [180 + radius * Math.sin(angle * Math.PI / 180), 180 - radius * Math.cos(angle * Math.PI / 180)];
 
 export default function Home() {
-  const { state, setState, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
+  const { state, setState, command, commandBusy, ready, storageError, status, conflict, resolveConflict } = useSyncedState();
   const [historyDate, setHistoryDate] = useState<Date | null>(null);
   const history = useActivityHistory(historyDate);
-  const { record } = history;
+  const settling = useRef(false);
   const alerts = useCompletionAlerts();
   const { announce } = alerts;
   const [now, setNow] = useState(0);
@@ -39,7 +41,7 @@ export default function Home() {
   const openTask = tasks.find(task => task.id === openTaskId);
   const selected = tasks.find(task => task.id === timer.taskId);
   const running = timer.deadline !== null;
-  const busy = spinning || running || timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS);
+  const busy = commandBusy || spinning || running || timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS);
   const seconds = running ? Math.max(0, Math.ceil((timer.deadline! - now) / 1000)) : timer.remaining;
   const progress = sessionProgress(timer, now);
   const taskProgress = (task: Task) => Math.min(1, (task.done + (timer.taskId === task.id && timer.mode === 'focus' ? progress : 0)) / task.estimate);
@@ -55,34 +57,24 @@ export default function Home() {
     if (!running) return;
     const tick = () => {
       const current = Date.now(); setNow(current);
-      if (timer.deadline! <= current) {
-        let completion: Completion | null = null;
-        setState(previous => {
-          const entry = activityFor(previous.tasks, previous.timer, current);
-          if (entry) record(entry);
-          completion = completedSession(previous.tasks, previous.timer, current);
-          const result = settleTimer(previous.tasks, previous.timer, current);
-          return { tasks: result.tasks, timer: result.timer };
-        });
-        if (completion) announce(completion);
-        setNotice(timer.mode === 'focus' ? 'Pomodoro complete.' : 'Break complete.');
+      if (timer.deadline! <= current && !settling.current) {
+        settling.current = true;
+        void command({ type: 'settle' }).catch(() => {}).finally(() => { setTimeout(() => { settling.current = false; }, 5000); });
       }
     };
     tick();
     const interval = setInterval(tick, 250);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
-  }, [running, timer.deadline, timer.mode, setState, announce, record]);
+  }, [running, timer.deadline, timer.mode, setState, announce]);
 
   useEffect(() => {
     const completion = completedAfterSync(lastObservedState.current, state, Date.now());
     if (completion) {
-      const entry = activityFor(lastObservedState.current.tasks, lastObservedState.current.timer, Date.now());
-      if (entry) record(entry);
       announce(completion);
     }
     lastObservedState.current = state;
-  }, [state, announce, record]);
+  }, [state, announce]);
 
   useEffect(() => {
     if (spinTimeout.current) { clearTimeout(spinTimeout.current); spinTimeout.current = null; setSpinning(false); }
@@ -90,11 +82,11 @@ export default function Home() {
 
   useEffect(() => { document.title = running ? `${time} · Pomopomo` : 'Pomopomo'; }, [running, time]);
 
-  function select(task: Task) {
-    if (busy) return;
-    setState(previous => ({ ...previous, timer: { ...freshTimer, taskId: task.id } }));
-    setNotice(`Selected: ${task.name}`);
+  async function runTimer(action: TimerAction) {
+    if (commandBusy) return;
+    try { await command(action); setNotice(''); } catch (error) { setNotice((error as Error).message); }
   }
+  function select(task: Task) { if (!busy) void runTimer({ type: 'select', taskId: task.id }); }
   function spin() {
     if (busy || total === 0) return;
     const values = new Uint32Array(1); crypto.getRandomValues(values);
@@ -104,29 +96,18 @@ export default function Home() {
     setSpinning(true); setNotice(''); setRotation(next);
     const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 50 : 4200;
     spinTimeout.current = setTimeout(() => {
-      setState(previous => ({ ...previous, timer: { ...freshTimer, taskId: winner.id } }));
+      void runTimer({ type: 'select', taskId: winner.id });
       setNotice(`Selected: ${winner.name}`); setSpinning(false);
     }, delay);
   }
   function toggleTimer() {
-    if (spinning || (timer.mode === 'focus' && (!selected || !remaining(selected)))) return;
-    const current = Date.now(); setNow(current); setNotice('');
+    if (spinning) return;
     if (!running) alerts.prepareSound();
-    let completion: Completion | null = null;
-    setState(previous => {
-      const settled = settleTimer(previous.tasks, previous.timer, current);
-      if (settled.finished) { const entry = activityFor(previous.tasks, previous.timer, current); if (entry) record(entry); completion = completedSession(previous.tasks, previous.timer, current); setNotice('Session complete.'); return { tasks: settled.tasks, timer: settled.timer }; }
-      return { ...previous, timer: { ...previous.timer, deadline: running ? null : current + previous.timer.remaining * 1000, remaining: running ? Math.max(0, Math.ceil((previous.timer.deadline! - current) / 1000)) : previous.timer.remaining } };
-    });
-    if (completion) announce(completion);
+    void runTimer({ type: running ? 'pause' : 'resume' });
   }
-  function resetTimer() { setState(previous => ({ ...previous, timer: { ...previous.timer, deadline: null, remaining: previous.timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS } })); }
-  function startBreak() {
-    if (busy) return;
-    alerts.prepareSound(); const current = Date.now(); setNow(current);
-    setState(previous => ({ ...previous, timer: { ...previous.timer, mode: 'break', remaining: BREAK_SECONDS, deadline: current + BREAK_SECONDS * 1000 } }));
-  }
-  function changeMode(mode: 'focus' | 'break') { if (!busy) setState(previous => ({ ...previous, timer: { ...previous.timer, mode, remaining: mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS } })); }
+  function resetTimer() { void runTimer({ type: 'reset' }); }
+  function startBreak() { if (!busy) { alerts.prepareSound(); void runTimer({ type: 'break' }); } }
+  function changeMode(mode: 'focus' | 'break') { if (!busy) void runTimer({ type: 'mode', mode }); }
   function addTask(event: React.FormEvent) {
     event.preventDefault(); const count = Number(estimate);
     if (!name.trim() || !Number.isInteger(count) || count < 1 || count > 999 || spinning) return;
@@ -152,6 +133,7 @@ export default function Home() {
       {conflict && <aside className="sync-conflict" role="alert"><div><strong>Your other device has changes, too.</strong><p>Choose which version to keep. This device has {tasks.length} tasks; the cloud has {conflict.state?.tasks.length ?? 0}. The replaced copy is backed up on this device.</p></div><button onClick={() => resolveConflict(false)}>Use cloud version</button><button onClick={() => resolveConflict(true)}>Use this device</button></aside>}
       {status === 'signin' && <p className="notice">Sign in to sync your tasks across devices. <a href="/signin-with-chatgpt?return_to=%2F" target="_top">Sign in</a></p>}
       {storageError && <p role="alert" className="notice">Browser storage is unavailable. Keep this tab open to retain your progress.</p>}
+      <DeviceSettings />
       <div className="workspace">
         <section className="left-column">
           <section className="timer-card" aria-labelledby="timer-heading">
@@ -160,7 +142,7 @@ export default function Home() {
             <div className="time" role="timer" aria-label={`${Math.floor(seconds / 60)} minutes ${seconds % 60} seconds remaining`}>{time}</div>
             <div className="session-progress"><progress value={progress} max={1} aria-label="Current session progress" /><span>{Math.floor(progress * 100)}%</span></div>
             <p className="focus-label">{timer.mode === 'break' ? '5-minute break' : selected && remaining(selected) ? <><span className="task-dot" style={{ background: taskColor(selected.color) }} />{selected.name}</> : 'Select a task to start.'}</p>
-            <div className="timer-actions"><button className="primary start-button" disabled={!ready || spinning || (timer.mode === 'focus' && (!selected || !remaining(selected)))} onClick={toggleTimer}>{running ? <Pause size={17} fill="currentColor" /> : <Play size={16} fill="currentColor" />}{running ? 'Pause session' : timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS) ? 'Resume session' : timer.mode === 'break' ? 'Start break' : 'Start focusing'}</button><button className="reset-button" onClick={resetTimer} disabled={spinning} aria-label="Reset current timer" title="Reset current timer"><RotateCcw size={18} /></button></div>
+            <div className="timer-actions"><button className="primary start-button" disabled={!ready || commandBusy || spinning || (timer.mode === 'focus' && (!selected || !remaining(selected)))} onClick={toggleTimer}>{running ? <Pause size={17} fill="currentColor" /> : <Play size={16} fill="currentColor" />}{running ? 'Pause session' : timer.remaining < (timer.mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS) ? 'Resume session' : timer.mode === 'break' ? 'Start break' : 'Start focusing'}</button><button className="reset-button" onClick={resetTimer} disabled={spinning || commandBusy} aria-label="Reset current timer" title="Reset current timer"><RotateCcw size={18} /></button></div>
             <p className="timer-footnote">{busy && !spinning ? 'Finish or reset to switch tasks.' : ''}</p>
           </section>
           <section className="tasks-card" aria-labelledby="tasks-heading"><div className="tasks-title"><h2 id="tasks-heading">Tasks <span>{active.length}</span></h2><span>{total} pomos left</span></div>
