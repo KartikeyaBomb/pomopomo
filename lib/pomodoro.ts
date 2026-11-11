@@ -7,6 +7,7 @@ export const colors = ['#e99573', '#e4be66', '#94aca0', '#a6a2c8', '#8eafbe', '#
 const displayPalette = ['#a9b9f3', '#c7b8ed', '#9bcdd5', '#e3b4cf', '#b2cbdc', '#a6d6c4'];
 export const taskColor = (color: string) => displayPalette[Math.max(0, colors.indexOf(color))];
 export const remaining = (task: Task) => Math.max(0, task.estimate - task.done);
+export const formatFocusTime = (pomos: number) => { const minutes = pomos * FOCUS_SECONDS / 60; return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`; };
 export function pickTask(tasks: Task[], random: number) {
   const total = tasks.reduce((sum, task) => sum + remaining(task), 0);
   if (total === 0) return null;

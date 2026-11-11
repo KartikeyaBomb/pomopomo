@@ -60,3 +60,5 @@ For local API integration checks, start the production preview on port 8787 and 
 ## E-paper device integration
 
 See [the complete hardware, pairing, and hosting guide](docs/EPAPER.md). Firmware is in `firmware/MyEpaperApp`. The device gateway runs at `https://pomopomo-device-gateway.pomopomo-karti.workers.dev`. Timer control now requires a connection and uses server-authoritative commands; task edits retain offline storage. Refresh older installed clients. Completion runs on server requests, including device polling with browsers closed.
+
+To change the e-paper device Wi-Fi without USB, hold BOOT for five seconds while running. Join the temporary `Pomopomo-Setup-xxxx` network using the password on its screen, then open `http://192.168.4.1`. Choose a 2.4 GHz network and connect. Existing account pairing is preserved. See `docs/EPAPER.md` for details.

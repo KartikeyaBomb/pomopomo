@@ -1,6 +1,6 @@
 # Pomopomo e-paper integration
 
-Status: backend and gateway implemented; MyEpaperApp compiled for Arduino-ESP32 3.3.0. Physical upload, Wi-Fi/pairing, screen quality and battery controls still require hardware checks. The original Downloads example is unchanged.
+Status: backend and gateway deployed; MyEpaperApp compiled and uploaded to the V2 board. Wi-Fi and account pairing have worked on hardware. Phone setup is supported by the local Wi-Fi portal described below; screen quality, battery power-off and the complete phone flow require physical checks. The original Downloads example is unchanged.
 
 ## Hosting verification and authentication
 
@@ -35,6 +35,7 @@ Inspected local sources and upstream Waveshare commit `aaf395c1bbd86f7c5b7a2f9f0
 - Battery latch GPIO 17 must stay HIGH after power-on. Releasing it powers down on battery. Audio power GPIO 42 is kept HIGH/off.
 - The vendor PWR demo interprets long press as power-off. Its button sample also attaches BOOT long-press callbacks to the wrong button object; this sketch instead uses its own debounced event task.
 - The initial power-on PWR hold is ignored until released. Long PWR retains deliberate power-off; on USB, where power cannot be cut, it enters deep sleep and wakes from PWR.
+- Battery level is read on GPIO4 (ADC1 channel 3) through the board's 1:2 divider, averaged over 16 calibrated samples every 30 seconds. `battery_level.h` maps the single-cell LiPo voltage to a percentage rounded to 5%, shown as an icon and number in the top-right corner. It is hidden when the reading is outside 2.5–4.6 V (for example no battery). Charging state is not detected, so the figure reads high while charging. Voltage-based estimates are approximate; verify against a real battery. `g++ -std=c++17 tests/firmware/battery_level_test.cpp -o /tmp/battery_test && /tmp/battery_test` checks the curve.
 
 The vendor display driver exposes full/base-image and partial-refresh functions. The first frame and every ten partial refreshes use a full base refresh. Idle identical screens do not refresh. Running time is rounded up to the next 30-second display increment; timing and server completion still use millisecond deadlines. Actions refresh after acknowledgement, with a 1.2-second minimum spacing. The display runs separately from network operations; BUSY has a 15-second timeout/restart safeguard. These settings compile and follow the driver protocol; ghosting and acceptable flicker need physical verification. The built-in Latin font may show boxes for unsupported scripts/emoji, and long titles wrap into the available title area.
 
@@ -73,7 +74,24 @@ This uses the installed ESP32 core in `~/Library/Arduino15` and isolated librari
 esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=opi,CDCOnBoot=cdc,USBMode=hwcdc,FlashMode=qio
 ```
 
-## Upload and Wi-Fi/pairing
+## Change Wi-Fi from your phone
+
+Hold **BOOT for five seconds while the device is running**, then release it. Setup works even when the device is offline. Do not hold PWR for this gesture: PWR still powers off the board. A shorter BOOT hold (2–5 seconds) performs its existing back/reset action only on release; continuing to five seconds opens setup without resetting the shared timer.
+
+The screen shows a network named `Pomopomo-Setup-xxxx`, a temporary password and `http://192.168.4.1`.
+
+1. In your phone's Wi-Fi settings, join that network with the password shown on the device. Stay connected even if your phone says it has no internet.
+2. Open `http://192.168.4.1` in Safari/Chrome if the setup page does not open automatically.
+3. Select the new **2.4 GHz** Wi-Fi (or type a hidden network's name), enter its password, and tap **Connect**.
+4. The device tests the connection before saving it. Incorrect details leave the setup page open and retain your previously saved settings. Once it connects, the device saves only the new Wi-Fi configuration and restarts. Return your phone to normal Wi-Fi.
+
+Your account token, pairing and any pending timer command are preserved. There is no need to revoke or pair again when changing Wi-Fi. A new/unconfigured device opens the same portal automatically and also asks for the pairing code from the PWA.
+
+The temporary access point uses a random WPA password, is available only after the physical gesture (or first boot), and closes on success, Cancel, or a ten-minute timeout. Cancel/timeout restart with saved settings. A per-session token protects configuration requests; credentials are neither logged nor sent to the cloud. The network worker pauses before the portal changes Wi-Fi or Preferences. A running cloud timer continues, and completion is reconciled after reconnection.
+
+USB Serial remains a recovery path. Sending `{"wifiSetup":true}` opens the same portal without clearing stored settings. Sending `{"reset":true}` still factory-resets local credentials; do not use reset just to change Wi-Fi.
+
+## Upload and first-time Wi-Fi/pairing
 
 1. Connect a USB **data** cable. Select the actual port in Arduino IDE. The previously selected `/dev/cu.usbmodem1101` was not connected during inspection; do not assume that port is still correct.
 2. Upload. If no port appears, hold BOOT while connecting/powering on, then release BOOT after the download port appears. Upload again. Do not keep BOOT pressed during normal boot.
@@ -87,7 +105,7 @@ esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=opi,CDCOnBoot
 Use JSON escaping for quotes/backslashes in passwords. No credentials need to be put into the sketch or chat. This setup uses 2.4 GHz Wi-Fi, not captive portals or enterprise login. Settings and the device token are stored in ESP32 NVS; normal uploads preserve them. Physical flash access is outside the protection provided by TLS/device revocation.
 
 5. The board restarts, obtains network time for TLS certificate validation, pairs, then fetches your existing account's tasks. A screen stuck on secure clock needs working DNS/NTP; do not disable certificate validation. Public CA roots are bundled from Google PKI and Let's Encrypt; refresh them if upstream certificates change.
-6. To change Wi-Fi or re-pair, send `{"reset":true}` in Serial Monitor, then provide new setup JSON after restart. Reset clears local credentials and pending commands, not cloud history. Revoke the old device entry in the PWA.
+6. To change Wi-Fi, use the phone portal above. To factory-reset or re-pair via USB, send `{"reset":true}` in Serial Monitor, then provide new setup JSON after restart. Reset clears local credentials and pending commands, not cloud history. Revoke the old device entry in the PWA.
 
 Controls:
 
@@ -96,8 +114,9 @@ Controls:
 | BOOT short press | Browse next unfinished task |
 | PWR short press while browsing | Select highlighted task |
 | PWR short press on selected task | Start / pause / resume shared timer |
-| BOOT hold 2 seconds while browsing | Return to timer |
-| BOOT hold 2 seconds on timer | Reset current timer |
+| BOOT hold 2–5 seconds, release while browsing | Return to timer |
+| BOOT hold 2–5 seconds, release on timer | Reset current timer |
+| BOOT hold 5 seconds while running | Open phone Wi-Fi setup (works offline) |
 | PWR hold 2 seconds | Power off after release; USB uses deep sleep |
 
 Selecting another task during an active/paused session is rejected until reset/completion. Buttons are disabled if state is more than 15 seconds old, disconnected, or a command is awaiting acknowledgement. A stale-revision message requires another press after reviewing the updated timer.
@@ -110,6 +129,7 @@ Selecting another task during an active/paused session is rejected until reset/c
 - Drop Wi-Fi around a button action and reconnect; verify the pending command is resolved once. Check stale-action messages when another device changes the timer.
 - Revoke the device in the PWA. It must stop fetching/controlling tasks on its next request; old token and pairing code must fail.
 - Run through a full session; inspect partial-refresh ghosting and full-refresh cadence. If artifacts remain, shorten the full-refresh interval. There are no per-second refreshes.
+- Check the battery indicator on battery and on USB: the percentage should fall slowly during a session and match a multimeter reading of the cell within roughly 10%.
 - On battery only, release PWR after power-on: the board must stay on. Short PWR must not cut power; a two-second hold and release must shut it down. Repeat while on USB to check sleep/wake. A battery-powered board was not available to verify this here.
 
 ## Validation and maintenance
@@ -127,3 +147,7 @@ Sources:
 - [Cloudflare D1 batch transactions](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [Cloudflare Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Cloudflare agent setup instructions](https://developers.cloudflare.com/agent-setup/prompt.md)
+
+## PWR short-press fix
+
+The button hold check now requires a debounced LOW level before using the current press timestamp. Previously, a fresh raw edge could use the previous timestamp and incorrectly emit a power-off event on an ordinary tap. `node tests/firmware/buttons.test.mjs` compiles the actual button task in a timed GPIO harness and covers one tap, an ignored startup hold, and one deliberate power-off hold. A short PWR tap is handled on release; wait for network acknowledgement before pressing again.

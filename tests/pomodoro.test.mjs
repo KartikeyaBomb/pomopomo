@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickTask, completedSession, completedAfterSync, settleTimer, editTask, sessionProgress, FOCUS_SECONDS, BREAK_SECONDS } from '../lib/pomodoro.ts';
+import { pickTask, completedSession, completedAfterSync, settleTimer, editTask, sessionProgress, formatFocusTime, FOCUS_SECONDS, BREAK_SECONDS } from '../lib/pomodoro.ts';
 const tasks = [{ id: 'a', name: 'Task A', estimate: 5, done: 0, color: '#e99573' }, { id: 'b', name: 'Task B', estimate: 15, done: 0, color: '#e4be66' }];
 test('5 versus 15 allocates exactly one quarter of the random interval to A', () => {
   let a = 0;
@@ -77,4 +77,10 @@ test('a completion synced from another device alerts without treating resets as 
   assert.equal(completedAfterSync(before, after, 1000).id, 'focus:a:1000');
   assert.equal(completedAfterSync(before, { tasks, timer: { ...before.timer, deadline: null } }, 1001), null);
   assert.equal(completedAfterSync(before, after, 999), null);
+});
+test('remaining pomodoros are shown as hours:minutes of focus time', () => {
+  assert.equal(formatFocusTime(0), '0:00');
+  assert.equal(formatFocusTime(1), '0:25');
+  assert.equal(formatFocusTime(3), '1:15');
+  assert.equal(formatFocusTime(20), '8:20');
 });
