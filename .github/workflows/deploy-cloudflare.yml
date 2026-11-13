@@ -33,3 +33,4 @@ jobs:
           fi
           npm run db:migrate:cloudflare
           npm run deploy:cloudflare
+          npx wrangler deploy --config gateway/wrangler.jsonc
