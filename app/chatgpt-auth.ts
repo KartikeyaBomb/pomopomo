@@ -1,3 +1,5 @@
+import { env } from 'cloudflare:workers';
+import { accessIdentity, type HostingAuth } from '../lib/server/hosting-auth';
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -20,6 +22,8 @@ const CALLBACK_PATH = "/callback";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
+  const config=env as unknown as HostingAuth;
+  if(config.AUTH_MODE==='cloudflare') return accessIdentity(requestHeaders.get('Cf-Access-Jwt-Assertion'),config);
   const userId = requestHeaders.get(USER_ID_HEADER);
   const email = requestHeaders.get(USER_EMAIL_HEADER);
   if (!userId || !email) return null;

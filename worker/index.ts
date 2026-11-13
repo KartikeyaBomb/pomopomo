@@ -3,7 +3,12 @@ import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 
 const worker = {
-  fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
+  async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
+    const migrationEnv=env as unknown as { MIGRATION_DESTINATION?: string; DB?: D1Database };
+    if(migrationEnv.MIGRATION_DESTINATION && new URL(request.url).pathname!=='/api/migration') {
+      const row=await migrationEnv.DB?.prepare("SELECT value FROM hosting_migration WHERE key='frozen'").first<{value:string}>().catch(()=>null);
+      if(row?.value==='1') { const destination=new URL(migrationEnv.MIGRATION_DESTINATION);const source=new URL(request.url);destination.pathname=source.pathname;destination.search=source.search;return Response.redirect(destination.toString(),307); }
+    }
     let binding = ctx.props?.CONNECTORS;
     // Local preview emulates the same request-scoped capability. This branch and
     // the auxiliary service binding are absent from production builds.

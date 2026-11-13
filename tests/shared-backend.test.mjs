@@ -16,7 +16,7 @@ for (const file of ['lib/server/shared-state.ts','lib/timer-actions.ts','lib/sta
  const source = await readFile(file,'utf8'); const js = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.[^']+)'/g, "from '$1.js'"); await writeFile(output,js);
 }
 const { SharedState } = await import(pathToFileURL(join(dir,'lib/server/shared-state.js')));
-const mf = new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}', compatibilityDate:'2026-05-22',d1Databases:['DB']});
+const mf = new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}', compatibilityDate:'2026-05-22',d1Databases:['DB','MIGRATION']});
 const db = await mf.getD1Database('DB');
 for (const file of ['0000_silent_mercury.sql','0001_petite_sabretooth.sql','0002_dashing_norman_osborn.sql','0003_loving_landau.sql']) {
  const sql = await readFile('drizzle/'+file,'utf8'); for (const statement of sql.split('--> statement-breakpoint').map(x=>x.trim()).filter(Boolean)) await db.prepare(statement).run();
@@ -69,5 +69,25 @@ test('pause-aware spans survive server writes, retries and late completion witho
  assert.deepEqual(JSON.parse(row.segments),[{start,end:start+600000},{start:start+1200000,end}]);
  assert.equal((await service.read('segments')).state.tasks[0].done,3);
  assert.equal((await service.read('segments')).state.timer.segments,undefined);
+});
+test('migration export is secret-gated and freezes all old writes until explicitly unfrozen',async()=>{
+ const migrationDb=await mf.getD1Database('MIGRATION');
+ for(const file of ['0000_silent_mercury.sql','0001_petite_sabretooth.sql','0002_dashing_norman_osborn.sql','0003_loving_landau.sql']) {
+  const sql=await readFile('drizzle/'+file,'utf8');for(const statement of sql.split('--> statement-breakpoint').map(x=>x.trim()).filter(Boolean))await migrationDb.prepare(statement).run();
+ }
+ const original=new SharedState(migrationDb);await original.ensure('owner');
+ const {digest}=await import(pathToFileURL(join(dir,'lib/server/shared-state.js')));
+ globalThis.__migrationEnv={DB:migrationDb,MIGRATION_SECRET_HASH:await digest('test-only-secret'),MIGRATION_EXPIRES:String(Date.now()+3600000)};
+ const routePath=join(dir,'app/api/migration/route.js');await mkdir(dirname(routePath),{recursive:true});
+ let source=ts.transpileModule(await readFile('app/api/migration/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+ source=source.replace(/import \{ env \} from ['"]cloudflare:workers['"];?/, 'const env=globalThis.__migrationEnv;').replace(/from '(\.[^']+)'/g, "from '$1.js'");await writeFile(routePath,source);
+ const {POST}=await import(pathToFileURL(routePath));
+ const call=(action,token='test-only-secret')=>POST(new Request('https://source.test/api/migration',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({action})}));
+ assert.equal((await call('export','wrong')).status,404);
+ const frozen=await (await call('freeze')).json();assert.equal(frozen.frozen,true);assert.equal(frozen.ownerUserId,'owner');assert.equal(frozen.tables.user_states.length,1);
+ await assert.rejects(()=>original.commit('owner',0,{tasks:[],timer:{taskId:null,mode:'focus',remaining:1500,deadline:null}}),/read-only/);
+ assert.equal((await original.read('owner')).revision,0);
+ await call('unfreeze');assert.equal(await original.commit('owner',0,{tasks:[],timer:{taskId:null,mode:'focus',remaining:1500,deadline:null}}),true);
+ globalThis.__migrationEnv.AUTH_MODE='cloudflare';assert.equal((await call('export')).status,404);delete globalThis.__migrationEnv;
 });
 test.after(async()=>{await mf.dispose();await rm(dir,{recursive:true,force:true});});
