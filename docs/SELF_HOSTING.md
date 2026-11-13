@@ -1,6 +1,6 @@
 # Own Cloudflare hosting and deployment
 
-The independent target is `https://pomopomo.pomopomo-karti.workers.dev`, in the user's Cloudflare account. The existing Sites deployment remains the active source until the data transfer is verified and the device gateway is switched.
+Production is `https://pomopomo.pomopomo-karti.workers.dev`, in your Cloudflare account. The November 13, 2026 transfer verified every field of 1 account state, 37 activity sessions, 4 device records, and 108 command receipts. The old Sites database is frozen as a backup and its URL redirects after the old sign-in boundary. The temporary migration credentials have been removed.
 
 ## Daily workflow after cutover
 
@@ -39,7 +39,7 @@ The narrower `/api/device/*` Access application bypasses browser sign-in, while 
 
 Required production variables: `AUTH_MODE=cloudflare`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` (tracked config); `OWNER_EMAIL`, `OWNER_USER_ID` (Cloudflare runtime secrets). The Worker fails closed when required owner settings are missing.
 
-The existing gateway address can stay on ESP32 firmware; its upstream will change to the independent Worker after transfer. Matching token hashes and command receipts will be copied so pairing and retries continue to work. Reinstall the phone PWA from the new hostname after cutover, since browser storage and service workers are scoped to an origin.
+The existing gateway address stays on ESP32 firmware; its upstream is the independent Worker. Matching token hashes and command receipts were copied so pairing and retries continue to work. The GitHub workflow deploys both the app and gateway. Reinstall the phone PWA from the new hostname after cutover, since browser storage and service workers are scoped to an origin.
 
 ## Migration controls
 
