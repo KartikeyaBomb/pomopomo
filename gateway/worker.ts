@@ -1,7 +1,8 @@
+interface Env { POMOPOMO: Fetcher }
 const ORIGIN = 'https://pomopomo.pomopomo-karti.workers.dev';
 const allowed = new Map([['GET /api/device/state', 0], ['POST /api/device/pair', 4096], ['POST /api/device/command', 4096]]);
 export default {
-  async fetch(request: Request, _env: unknown): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url), limit = allowed.get(`${request.method} ${url.pathname}`);
     if (limit === undefined || url.search) return Response.json({ error: 'Not found' }, { status: 404 });
     const auth = request.headers.get('authorization');
@@ -17,7 +18,7 @@ export default {
     if (auth) headers.set('Authorization', auth);
     try {
       // Fixed origin + exact path allowlist. Never forward client identity, cookies or redirects.
-      const response = await fetch(ORIGIN + url.pathname, { method: request.method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(15000) });
+      const response = await env.POMOPOMO.fetch(ORIGIN + url.pathname, { method: request.method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(15000) });
       if (!(response.headers.get('content-type') ?? '').includes('application/json')) return Response.json({ error: 'Gateway access unavailable' }, { status: 502 });
       return new Response(response.body, { status: response.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     } catch { return Response.json({ error: 'Upstream unavailable' }, { status: 502 }); }

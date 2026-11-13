@@ -8,7 +8,7 @@ test('gateway only forwards device routes, strips identity, and keeps service cr
  const saved=globalThis.fetch;let outgoing;
  globalThis.fetch=async(url,options)=>{outgoing={url,options};return Response.json({state:{tasks:[]}});};
  try {
-  const env={SITES_SERVICE_TOKEN:'server-only-test'};const token='Bearer pomo_'+'a'.repeat(64);
+  const env={POMOPOMO:{fetch:(...args)=>globalThis.fetch(...args)}};const token='Bearer pomo_'+'a'.repeat(64);
   assert.equal((await gateway.fetch(new Request('https://gateway.test/api/state'),env)).status,404);
   assert.equal((await gateway.fetch(new Request('https://gateway.test/api/device/state'),env)).status,401);
   assert.equal((await gateway.fetch(new Request('https://gateway.test/api/device/state?url=https://evil.test',{headers:{Authorization:token}}),env)).status,404);
