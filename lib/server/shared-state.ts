@@ -15,7 +15,7 @@ export class SharedState {
   // All conditional statements see the same revision inside one D1 transaction.
   async commit(userId: string, revision: number, state: AppState, entry: ReturnType<typeof activityFor> = null, receipt?: { id: string; hash: string; actor: string }) {
     const statements: D1PreparedStatement[] = [];
-    if (entry) statements.push(this.db.prepare(`INSERT OR IGNORE INTO activity_sessions(user_id,id,mode,task_id,task_name,completed_at,duration_seconds) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM user_states WHERE user_id=? AND revision=?)`).bind(userId, entry.id, entry.mode, entry.taskId, entry.taskName, entry.completedAt, entry.durationSeconds, userId, revision));
+    if (entry) statements.push(this.db.prepare(`INSERT OR IGNORE INTO activity_sessions(user_id,id,mode,task_id,task_name,completed_at,duration_seconds,segments) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM user_states WHERE user_id=? AND revision=?)`).bind(userId, entry.id, entry.mode, entry.taskId, entry.taskName, entry.completedAt, entry.durationSeconds, entry.segments ? JSON.stringify(entry.segments) : null, userId, revision));
     if (receipt) statements.push(this.db.prepare(`INSERT INTO timer_commands(user_id,actor,command_id,request_hash,revision) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM user_states WHERE user_id=? AND revision=?)`).bind(userId, receipt.actor, receipt.id, receipt.hash, revision + 1, userId, revision));
     statements.push(this.db.prepare('UPDATE user_states SET payload=?,revision=revision+1 WHERE user_id=? AND revision=?').bind(JSON.stringify(state), userId, revision));
     const results = await this.db.batch(statements);

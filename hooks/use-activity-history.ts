@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { activitySchema, mergeActivity, monthRange, type Activity } from '../lib/activity';
+import { activitySchema, mergeActivity, activityDayRange, activityIntersects, type Activity } from '../lib/activity';
 const OUTBOX = 'pomopomo-history-outbox-v1';
 export function useActivityHistory(month: Date | null) {
   const [cached, setCached] = useState<Activity[]>([]);
@@ -10,7 +10,7 @@ export function useActivityHistory(month: Date | null) {
   const [storageError, setStorageError] = useState(false);
   const outbox = useRef<Activity[]>([]);
   const trigger = useRef<() => void>(() => {});
-  const { start, end } = month ? monthRange(month) : { start: 0, end: 0 };
+  const { start, end } = month ? activityDayRange(month) : { start: 0, end: 0 };
   const persistPending = useCallback(() => {
     setPending([...outbox.current]);
     try { localStorage.setItem(OUTBOX, JSON.stringify(outbox.current)); } catch { setStorageError(true); }
@@ -28,8 +28,8 @@ export function useActivityHistory(month: Date | null) {
     if (!end) return;
     let disposed = false, inFlight = false;
     const controller = new AbortController();
-    const key = `pomopomo-history-month-${start}`;
-    const inRange = (entry: Activity) => entry.completedAt >= start && entry.completedAt < end;
+    const key = `pomopomo-history-day-v2-${start}`;
+    const inRange = (entry: Activity) => activityIntersects(entry, start, end);
     let known: Activity[] = [];
     try { known = z.array(activitySchema).parse(JSON.parse(localStorage.getItem(key) ?? '[]')).filter(inRange); } catch { /* Empty month cache. */ }
     setCached(known);
@@ -57,7 +57,7 @@ export function useActivityHistory(month: Date | null) {
           cache(mergeActivity(known, batch.filter(inRange)));
           outbox.current = outbox.current.filter(entry => !saved.has(entry.id)); persistPending();
         }
-        const response = await fetch(`/api/history?start=${start}&end=${end}`, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
+        const response = await fetch(`/api/history?start=${start}&end=${end}&timeline=1`, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
         if (disposed) return;
         if (response.status === 401 || response.redirected) { setStatus('signin'); return; }
         if (!response.ok) throw new Error('Unable to load history');
@@ -75,5 +75,5 @@ export function useActivityHistory(month: Date | null) {
     void sync();
     return () => { disposed = true; controller.abort(); clearInterval(interval); trigger.current = () => {}; window.removeEventListener('online', sync); window.removeEventListener('offline', offline); document.removeEventListener('visibilitychange', visible); };
   }, [start, end, persistPending]);
-  return { entries: mergeActivity(cached, pending).filter(entry => entry.completedAt >= start && entry.completedAt < end), status, storageError, pendingCount: pending.length, record };
+  return { entries: mergeActivity(cached, pending).filter(entry => activityIntersects(entry, start, end)), status, storageError, pendingCount: pending.length, record };
 }

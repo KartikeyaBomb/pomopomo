@@ -6,6 +6,7 @@ import { useSyncedState } from '../hooks/use-synced-state';
 import { useActivityHistory } from '../hooks/use-activity-history';
 import { DeviceSettings } from '../components/device-settings';
 import type { TimerAction } from '../lib/timer-actions';
+import { activityDate } from '../lib/activity';
 import { ActivityCalendar } from '../components/activity-calendar';
 import { useCompletionAlerts } from '../hooks/use-completion-alerts';
 import { CompletionPopup } from '../components/completion-popup';
@@ -49,7 +50,7 @@ export default function Home() {
 
   useEffect(() => {
     setNow(Date.now());
-    const date = new Date(); setHistoryDate(new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12));
+    setHistoryDate(activityDate(new Date()));
     return () => { if (spinTimeout.current) clearTimeout(spinTimeout.current); };
   }, []);
 

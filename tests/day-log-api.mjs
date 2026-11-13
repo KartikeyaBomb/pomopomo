@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:8787';
+const headers={'oai-authenticated-user-id':'day-log-'+crypto.randomUUID(),'oai-authenticated-user-email':'test@example.test','Content-Type':'application/json'};
+const start=new Date(2026,9,31,8).getTime(),end=new Date(2026,10,1,8).getTime();
+const complete=end+2*86400000;
+const entry={id:`focus:task:${complete}`,mode:'focus',taskId:'task',taskName:'Paused across days',completedAt:complete,durationSeconds:1500,segments:[{start:start+3600000,end:start+4200000},{start:complete-900000,end:complete}]};
+let response=await fetch(base+'/api/history',{method:'POST',headers,body:JSON.stringify({entries:[entry]})});assert.equal(response.status,200);
+response=await fetch(base+`/api/history?start=${start}&end=${end}&timeline=1`,{headers});assert.equal(response.status,200);let data=await response.json();assert.equal(data.entries.length,1);assert.deepEqual(data.entries[0].segments,entry.segments);
+response=await fetch(base+`/api/history?start=${start}&end=${end}`,{headers});assert.equal((await response.json()).entries.length,0);
+response=await fetch(base+`/api/history?start=${start}&end=${end}&timeline=1`,{headers:{...headers,'oai-authenticated-user-id':'unrelated'}});assert.equal((await response.json()).entries.length,0);
+const next=end+15*60000;
+const crossing={id:`focus:cross:${next}`,mode:'focus',taskId:'cross',taskName:'Crosses 8 AM',completedAt:next,durationSeconds:1500};
+response=await fetch(base+'/api/history',{method:'POST',headers,body:JSON.stringify({entries:[crossing]})});assert.equal(response.status,200);
+response=await fetch(base+`/api/history?start=${start}&end=${end}&timeline=1`,{headers});data=await response.json();assert.equal(data.entries.length,2);
+assert.equal(data.entries.find(x=>x.taskId==='cross').segments,undefined);
+console.log('Day log API passed: overlapping recorded spans, legacy crossing at 8 AM, optional metadata and account isolation.');

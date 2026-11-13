@@ -62,3 +62,9 @@ For local API integration checks, start the production preview on port 8787 and 
 See [the complete hardware, pairing, and hosting guide](docs/EPAPER.md). Firmware is in `firmware/MyEpaperApp`. The device gateway runs at `https://pomopomo-device-gateway.pomopomo-karti.workers.dev`. Timer control now requires a connection and uses server-authoritative commands; task edits retain offline storage. Refresh older installed clients. Completion runs on server requests, including device polling with browsers closed.
 
 To change the e-paper device Wi-Fi without USB, hold BOOT for five seconds while running. Join the temporary `Pomopomo-Setup-xxxx` network using the password on its screen, then open `http://192.168.4.1`. Choose a 2.4 GHz network and connect. Existing account pairing is preserved. See `docs/EPAPER.md` for details.
+
+## Copyable day log
+
+History includes a read-only day log and Copy day button for pasting into Notion. It lists completed focus work in chronological order as `7:03 - 7:28 task`, omits breaks, merges adjacent same-task sessions, and inserts a blank line when a gap is at least one minute. Days run from 8 AM to 8 AM in the viewing device’s local timezone; after-midnight work appears on the preceding date. Work crossing 8 AM is split at that boundary. New sessions record active spans across pauses on the server (including ESP32 commands). Older records infer start as finish minus 25 minutes and are labeled estimated because past pauses cannot be reconstructed. Running/abandoned sessions do not appear.
+
+`node tests/day-log-api.mjs` tests overlapping history retrieval against the local production server; `tests/day-log.test.mjs` covers formatting, gaps, DST and rollover.

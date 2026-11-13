@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { segmentSchema } from './activity';
 import { colors, FOCUS_SECONDS, BREAK_SECONDS } from './pomodoro';
 const taskSchema = z.object({
   id: z.string().min(1).max(100), name: z.string().trim().min(1).max(120),
@@ -12,6 +13,8 @@ export const stateSchema = z.object({
     taskId: z.string().max(100).nullable(), mode: z.enum(['focus', 'break']),
     remaining: z.number().finite().int().min(0).max(FOCUS_SECONDS),
     deadline: z.number().finite().nonnegative().nullable(),
+    segments: z.array(segmentSchema).max(199).optional(),
+    runStartedAt: z.number().int().nonnegative().optional(),
   }),
 }).superRefine((state, ctx) => {
   if (new Set(state.tasks.map(task => task.id)).size !== state.tasks.length) ctx.addIssue({ code: 'custom', message: 'Task IDs must be unique' });

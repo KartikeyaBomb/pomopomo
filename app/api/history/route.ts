@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { getDb } from '../../../db';
 import { activitySessions } from '../../../db/schema';
@@ -11,8 +11,8 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const start = Number(params.get('start')); const end = Number(params.get('end'));
   if (!params.has('start') || !params.has('end') || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start || end - start > 32 * 86400000) return reply({ error: 'Choose a valid month.' }, 400);
-  const entries = await getDb().select({ id: activitySessions.id, mode: activitySessions.mode, taskId: activitySessions.taskId, taskName: activitySessions.taskName, completedAt: activitySessions.completedAt, durationSeconds: activitySessions.durationSeconds }).from(activitySessions).where(and(eq(activitySessions.userId, user.userId), gte(activitySessions.completedAt, start), lt(activitySessions.completedAt, end))).orderBy(desc(activitySessions.completedAt));
-  return reply({ entries });
+  const entries = await getDb().select({ id: activitySessions.id, mode: activitySessions.mode, taskId: activitySessions.taskId, taskName: activitySessions.taskName, completedAt: activitySessions.completedAt, durationSeconds: activitySessions.durationSeconds, segments: activitySessions.segments }).from(activitySessions).where(and(eq(activitySessions.userId, user.userId), or(and(gte(activitySessions.completedAt, start), lt(activitySessions.completedAt, end + (params.has('timeline') ? 1500000 : 0))), ...(params.has('timeline') ? [sql`EXISTS (SELECT 1 FROM json_each(COALESCE(${activitySessions.segments}, '[]')) AS span WHERE json_extract(span.value, '$.start') < ${end} AND json_extract(span.value, '$.end') > ${start})`] : [])))).orderBy(desc(activitySessions.completedAt));
+  return reply({ entries: entries.map(({ segments, ...entry }) => ({ ...entry, ...(segments ? { segments } : {}) })) });
 }
 export async function POST(request: Request) {
   const user = await getChatGPTUser();

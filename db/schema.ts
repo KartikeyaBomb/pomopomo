@@ -13,6 +13,7 @@ export const activitySessions = sqliteTable('activity_sessions', {
   taskName: text('task_name'),
   completedAt: integer('completed_at').notNull(),
   durationSeconds: integer('duration_seconds').notNull(),
+  segments: text('segments', { mode: 'json' }).$type<Array<{ start: number; end: number }>>(),
 }, table => [
   primaryKey({ columns: [table.userId, table.id] }),
   index('activity_user_date_idx').on(table.userId, table.completedAt),

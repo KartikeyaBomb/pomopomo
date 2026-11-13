@@ -18,7 +18,7 @@ for (const file of ['lib/server/shared-state.ts','lib/timer-actions.ts','lib/sta
 const { SharedState } = await import(pathToFileURL(join(dir,'lib/server/shared-state.js')));
 const mf = new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}', compatibilityDate:'2026-05-22',d1Databases:['DB']});
 const db = await mf.getD1Database('DB');
-for (const file of ['0000_silent_mercury.sql','0001_petite_sabretooth.sql','0002_dashing_norman_osborn.sql']) {
+for (const file of ['0000_silent_mercury.sql','0001_petite_sabretooth.sql','0002_dashing_norman_osborn.sql','0003_loving_landau.sql']) {
  const sql = await readFile('drizzle/'+file,'utf8'); for (const statement of sql.split('--> statement-breakpoint').map(x=>x.trim()).filter(Boolean)) await db.prepare(statement).run();
 }
 const service = new SharedState(db);
@@ -51,5 +51,23 @@ test('competing commands cannot both mutate a revision; completion precedes late
 });
 test('break completion creates history but never task credit',async()=>{
  await seed('break');const result=await service.command('break','device',command({type:'break'},1),1000);assert.equal(result.status,200);const done=await service.settled('break',301001);assert.equal(done.state.tasks[0].done,2);assert.equal((await db.prepare('SELECT mode FROM activity_sessions WHERE user_id=?').bind('break').first()).mode,'break');
+});
+test('pause-aware spans survive server writes, retries and late completion without logging pauses',async()=>{
+ await seed('segments');const start=1000000;
+ let result=await service.command('segments','device',command({type:'start'},1),start);
+ assert.equal(result.status,200);
+ result=await service.command('segments','browser',command({type:'pause'},2),start+600000);
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.state.timer.segments,[{start,end:start+600000}]);
+ const resume=command({type:'resume'},3);
+ result=await service.command('segments','device',resume,start+1200000);
+ assert.equal(result.status,200);
+ await service.command('segments','device',resume,start+1201000);
+ const end=start+1200000+900000;
+ await Promise.all([service.settled('segments',end+50000),service.settled('segments',end+50000)]);
+ const row=await db.prepare('SELECT segments FROM activity_sessions WHERE user_id=?').bind('segments').first();
+ assert.deepEqual(JSON.parse(row.segments),[{start,end:start+600000},{start:start+1200000,end}]);
+ assert.equal((await service.read('segments')).state.tasks[0].done,3);
+ assert.equal((await service.read('segments')).state.timer.segments,undefined);
 });
 test.after(async()=>{await mf.dispose();await rm(dir,{recursive:true,force:true});});
